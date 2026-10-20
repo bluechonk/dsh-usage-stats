@@ -140,13 +140,19 @@ git clone https://github.com/bluechonk/dsh-usage-stats.git
 零运行时依赖，测试用 Node 内置 `node:test`：
 
 ```bash
-npm run check   # 语法检查
-npm test        # 单元测试
+npm run check        # 语法检查
+npm test             # 单元测试（119 个用例）
+npm run verify:e2e   # 端到端：用本机会话日志跑一遍回填，校验四条 API 的响应形状
 ```
+
+`verify:e2e` 只读 `~/.dsh/sessions`，统计落盘到临时目录并在结束时自动清理，不污染 `~/.dsh/usage-stats/`。
 
 技术规格（事件形状、折叠语义、接口契约、UI 细则）见 [SPEC.md](SPEC.md)。
 
-DSH 客户端插件运行时能力调研（slots API、CSS 变量、模块表等）见 [docs/dsh-client-runtime-capabilities.md](docs/dsh-client-runtime-capabilities.md)。
+相关文档：
+
+- [docs/dsh-client-runtime-capabilities.md](docs/dsh-client-runtime-capabilities.md)——DSH 客户端插件运行时能力调研（slots API、CSS 变量、模块表、可用组件）
+- [docs/e2e-verify.mjs](docs/e2e-verify.mjs)——端到端验证脚本
 
 ## 已知限制
 

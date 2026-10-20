@@ -39,7 +39,8 @@
   ],
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\"",
-    "check": "node --check lib/client.js && node --check lib/index.js && node --check lib/fold.js && node --check lib/store.js && node --check lib/aggregate.js"
+    "check": "node --check lib/client.js && node --check lib/index.js && node --check lib/fold.js && node --check lib/store.js && node --check lib/aggregate.js",
+    "verify:e2e": "node docs/e2e-verify.mjs"
   },
   "keywords": [
     "deepseek-harness",
