@@ -1,7 +1,7 @@
 {
-  "name": "dsh-usage-stats",
+  "name": "@bluechonk/dsh-usage-stats",
   "version": "1.0.0",
-  "description": "DeepSeek Harness 用量统计插件：GitHub 风格热力图、Token/缓存命中/账户余额看板、工作区别名管理",
+  "description": "DeepSeek Harness 插件：设置页「使用统计」看板——六格摘要条 + Token 活动热力图（每日/每周/累计）+ 按模型每日趋势折线 + 模型用量环形图。数据全部来自本机会话日志，零上传零运行时依赖。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -19,18 +19,28 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-slots",
-        "@deepseek-ai/dsh-client-ui-settings-general"
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-commands",
+        "@deepseek-ai/dsh-client-ui-model-selection",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-slots"
       ],
       "platform": "web"
     }
   },
   "files": [
     "lib/index.js",
+    "lib/fold.js",
+    "lib/store.js",
+    "lib/aggregate.js",
     "lib/client.js",
     "cordis.patch.yml"
   ],
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "check": "node --check lib/client.js && node --check lib/index.js && node --check lib/fold.js && node --check lib/store.js && node --check lib/aggregate.js"
+  },
   "keywords": [
     "deepseek-harness",
     "dsh",
@@ -38,8 +48,19 @@
     "usage",
     "stats",
     "heatmap",
-    "tokens",
-    "balance"
+    "tokens"
   ],
-  "license": "MIT"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bluechonk/dsh-usage-stats.git"
+  },
+  "homepage": "https://github.com/bluechonk/dsh-usage-stats#readme",
+  "bugs": {
+    "url": "https://github.com/bluechonk/dsh-usage-stats/issues"
+  },
+  "author": "BlueChonk",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.15.0"
+  }
 }
