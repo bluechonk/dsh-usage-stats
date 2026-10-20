@@ -23,7 +23,7 @@ The loader row id and the client module id are **not** shared: the `id` in `cord
 
 | Area | Description |
 |---|---|
-| Title row | "Usage Stats" + an "App Usage" pill badge + the subtitle "A rough view of session activity and model usage." |
+| Title row | "Usage Stats" + an "App Usage" pill badge |
 | Six-cell summary strip | Total Tokens / Peak Tokens / Cache Hit Rate / Longest Chat / Current Streak / Longest Streak; when the width is too narrow the **whole cell wraps** instead of truncating the label |
 | Token activity | Heatmap cells for 52 calendar weeks (starting Sunday); pills in the top-right switch between Daily / Weekly / Total |
 | Time range | Pills switch between Last 7 Days / Last 30 Days, affecting **only the trend chart below** |
