@@ -102,6 +102,21 @@ test("rebuildDaily：同轮换模型——轮次记在首见模型名下，全�
   assert.equal(daily.byModel["deepseek/deepseek-reasoner"].turns, 0);
 });
 
+test("rebuildDaily：归轮按到达顺序（与增量路径一致），不按 time 排序", { timeout: 5000 }, () => {
+  // 增量路径（updateDailyWithRecord）按 append 到达顺序归轮；重建必须同口径，
+  // 否则「同一轮换模型续采」时轮数归属的模型会在重建前后漂移（daily 对不上账）。
+  // 这里的输入故意乱序：第二条的时间更早，若按 time 排序归轮就会记到另一个模型名下。
+  const daily = rebuildDaily(
+    [
+      rec({ hour: 9, minute: 5, sid: "s1", turn: 1, model: "deepseek-chat", usage: [10, 0, 0, 0] }),
+      rec({ hour: 9, minute: 1, sid: "s1", turn: 1, model: "deepseek-reasoner", usage: [5, 0, 0, 0] }),
+    ],
+    D0,
+  );
+  assert.equal(daily.byModel["deepseek/deepseek-chat"].turns, 1, "轮次应记在先到的那条（deepseek-chat）名下");
+  assert.equal(daily.byModel["deepseek/deepseek-reasoner"].turns, 0, "后到的那条不应重复计轮");
+});
+
 test("rebuildDaily：byHour 恒 24 槽，各小时四桶总和", { timeout: 5000 }, () => {
   const daily = rebuildDaily(
     [
@@ -344,4 +359,21 @@ test("modelShares：days=0 = 全期口径——窗口外的历史用量也计入
   // 对照：days=7 只算窗口内
   const win = modelShares(dailies, 7, "2026-10-03");
   assert.equal(win.total, 300);
+});
+
+test("modelShares 全期与 summarize 全期口径一致（环图总量 === 摘要条累计）", { timeout: 5000 }, () => {
+  // 未来时间戳的记录（时钟漂移/时间戳超前）：summarize 不封顶，modelShares 也必须不封顶，
+  // 否则「模型用量」环图总量会小于「累计 Token 数」——口径对不上。
+  const dailies = [
+    makeDaily("2026-10-01", [["deepseek", "deepseek-chat", 80, 20, 0, 0]]), // 100
+    makeDaily("2026-10-03", [["deepseek", "deepseek-chat", 100, 100, 0, 0]]), // 200
+    makeDaily("2026-10-09", [["deepseek", "deepseek-chat", 5, 5, 0, 0]]), // 10（未来日期）
+  ];
+  const today = "2026-10-03";
+  const sum = summarize(dailies, today);
+  const shares = modelShares(dailies, 0, today);
+  assert.equal(shares.total, sum.totalTokens, "全期口径下环图总量必须等于摘要条累计");
+  assert.equal(shares.total, 310); // 100 + 200 + 10
+  // 近 N 日窗口仍按今天封顶（未来日期不进窗口）
+  assert.equal(modelShares(dailies, 7, today).total, 300);
 });

@@ -1016,3 +1016,43 @@ test31("daily 内容陈旧时自愈重建（日期集一致但内容为空 → �
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test31("回填无增量时也落 mtime 哨兵（稳态不重复解压会话文件）", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dus-sentinel-"));
+  try {
+    const storageRoot = join(root, "stats");
+    const sessionsRoot = join(root, "sessions");
+    const ws = "--ws--";
+    const sid = "sess-sentinel-1";
+    const T = new Date(2026, 9, 10, 10, 0, 0).getTime();
+    writeSessionFile(sessionsRoot, ws, sid, [
+      { type: "session", version: 4, id: "x", createdAt: T },
+      msgEvent(sid, 1, 1, 100, T),
+    ]);
+
+    // 第一轮：折出 1 条 record，写 done + mtime
+    const ctx1 = makeRouteCaptureCtx();
+    apply(ctx1, { storageRoot, sessionsRoot });
+    await sleep(150);
+    assert.equal(recordsAll(storageRoot).length, 1, "首轮回填 1 条");
+    const markerPath = join(storageRoot, "backfill-marker.json");
+    assert.ok(existsSync(markerPath), "回填游标应落盘");
+    const marker = JSON.parse(readFileSync(markerPath, "utf8"));
+    assert.ok(Array.isArray(marker.done) && marker.done.includes(sid), "marker.done 应含该会话");
+    assert.ok(marker.mtimes && Number.isFinite(marker.mtimes[sid]), "marker.mtimes 应记该会话的 mtime 哨兵");
+    for (const dispose of ctx1.disposers) await dispose();
+
+    // 第二轮：文件未变 → mtime 哨兵生效 → 零解压、零新 record
+    const ctx2 = makeRouteCaptureCtx();
+    apply(ctx2, { storageRoot, sessionsRoot });
+    await sleep(150);
+    assert.equal(recordsAll(storageRoot).length, 1, "第二轮不应产生新 record");
+    const status2 = ctx2.routes.find((r) => r.path.endsWith("/backfill/status"));
+    const st = JSON.parse((await callRoute(status2, "GET", "/api/dsh-usage-stats/backfill/status")).body);
+    // status.records 是**本轮**产出数（不是累计）：哨兵生效 → 本轮零产出
+    assert.equal(st.records, 0, "mtime 哨兵生效后本轮不应再折出记录");
+    for (const dispose of ctx2.disposers) await dispose();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
