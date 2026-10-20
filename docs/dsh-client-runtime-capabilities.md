@@ -7,7 +7,7 @@
 > **对本仓库的直接影响**：
 > - 图表全部自绘 SVG，故 `lib/client.js` 零第三方依赖；
 > - 样式用自有的 `--dus-*` 变量表（挂在 `body` / `body[data-ds-dark-theme]` 两档）跟随宿主主题；
-> - 面板注册在 `settings.section`（`order: 13`），标题与副题自己画（宿主不给 section 页头）。
+> - 面板注册在 `settings.section`（`order: 13`），标题自己画（宿主不给 section 页头）。
 
 调研对象：`C:\Users\bluechonk\AppData\Local\Programs\DeepSeek Harness\resources\app.asar`（版本 `0.2.1-rc.2`）
 下文所有路径均相对 `app.asar` 根目录。
