@@ -107,6 +107,8 @@ record 一行形状（字段全名，不压缩，含会话内事件序号 `seq`�
 
 模型 key = `"<provider>/<model>"`。`turns` 计数：`kind==="add"` 且该 `(sessionId, turn)` 当日首见才 +1（按 seen 集全局去重，与模型无关）。全项目统一口径 `totalTokens` = 四桶之和（`uncachedInputTokens + outputTokens + cacheReadTokens + cacheWriteTokens`），与官方 trajectory「用量」四项可逐项对账。
 
+**归轮按到达顺序**（增量路径与重建路径必须同口径）：增量侧按 append 到达顺序记首见；重建侧也按 records 的**行序**遍历，**不按 `time` 排序**。排序会让「同一轮换模型续采」时轮数归属的模型在重建前后漂移，daily 对不上账。同一天的 records 必在同一月份文件内，文件行序 = append 序 = 到达序。
+
 日聚合可随时由 records JSONL 全量重建（`rebuildDaily(records)` 纯函数）。**重建触发判据不能只看日期集**：
 
 | 判据 | 含义 |
@@ -130,7 +132,7 @@ record 一行形状（字段全名，不压缩，含会话内事件序号 `seq`�
 | `GET /api/dsh-usage-stats/summary` | — | `{since, totalTokens, peakDay:{date,tokens}|null, longestChatMs, currentStreakDays, longestStreakDays, cacheReadTokens, uncachedInputTokens, cacheHitRate}` |
 | `GET /api/dsh-usage-stats/heatmap` | `?days=N`（默认 366，0=全量，上界 3660） | `{days:[{date:"YYYY-MM-DD", tokens, turns}]}` 逐日全量；weekly/total 列聚合由 client 计算 |
 | `GET /api/dsh-usage-stats/trend` | `?days=1\|7\|30` | days=1 → `{granularity:"hour", points:[{label:"0时"…"23时", byModel:{key:tokens}, total}]}`；否则 `{granularity:"day", points:[{date, byModel, total}]}` |
-| `GET /api/dsh-usage-stats/models` | `?days=0\|7\|30`（默认 0=全期） | `{models:[{key, provider, model, tokens, share}], total}`，按 tokens 降序。模型用量环图恒用 `days=0` 全期口径 |
+| `GET /api/dsh-usage-stats/models` | `?days=0\|7\|30`（默认 0=全期） | `{models:[{key, provider, model, tokens, share}], total}`，按 tokens 降序。模型用量环图恒用 `days=0` 全期口径，**全期两端都不设界**（与 `summarize` 的全期求和同口径，否则未来时间戳的记录会让环图总量小于摘要条累计） |
 | `GET /api/dsh-usage-stats/backfill/status` | — | `{running, startedAt, scanned, total, backfilled, records, lostFrames, finishedAt, error}` |
 | `POST /api/dsh-usage-stats/backfill` | — | 202 受理制：`{ok, started:true}` 即返，任务后台分片执行；并发触发返回 409 |
 
@@ -171,6 +173,7 @@ UI 描述以本节为准。面板挂在设置页 `settings.section`，`order: 13
 6. 「更新于 HH:MM」仅在同一拍内实际发起的每一路都成功时推进；有路失败则冻结时间戳并追加「（部分数据未更新）」。**首拍即失败时还没有时间戳**：此时也要给出「尚未取得数据（部分数据未更新）」的可见信号，否则页脚整格消失，用户无法区分「没数据」与「服务挂了」。
 7. phase 转移：初始加载与显式刷新（`full`）全权转移；静默拍单调——`prev==="ready"` 恒保持 ready，`next==="ready"` 且 prev 非 ready 时升为 ready，其余 no-op。静默拍永不进 `loading`、不打回 `empty`/`error`；被新拍顶掉的初始拍至少要把面板从 `loading` 放出。
 8. **判废按 key 而非整包**：每一路（summary/heatmap/trend/models）各自记录最新 seq，落地时逐路比对——某一拍被后发起的拍顶掉时，只丢它「比别的拍更新」的那几路，别的路（如 full 拍的 heatmap）仍可落地。整包丢弃会让「初始加载 >60s」或「刷新与静默拍撞车」时热力图永久停在「加载中…」（既无降级行也无重试出口），表现为「点了刷新没反应」。
+   **seq 登记必须在 `await` 之前且只许递增**：若等响应回来才登记，慢请求完成后会覆盖快请求已登记的 seq，令过期响应被误判为「这一路最新」而落地（数据回退）。
 9. 键盘可达：热力图与趋势图各只占一个 tab stop（容器 `tabIndex=0`），聚焦后用方向键移动游标并复用同一数据卡片；只接管 ← → ↑ ↓ Home End 六键，其余（含 Tab）不拦截；首次按键游标落在今天（热力图 `51*7 + 星期几`）/ 最新一点；游标只存索引（像素锚点渲染时现算），热力图游标格加 `.dus-hmCur` 描边（缺勤日也可见）；胶囊补 `aria-pressed`，可点元素补 `:focus-visible`，图表容器补 `role="img"` + `aria-label`（热力图「共 N 天有用量」从原始逐日数组算，避免读到柱格数）。
 10. 趋势图例**纯展示**：全部模型恒定列出，不可点击隐藏/恢复（`<span>` 渲染，不可聚焦不可点击）。趋势卡片行数封顶 8 行 + 「另有 N 个模型未列出」。
 11. 悬停卡片使用自定义浮层（非原生 `title`）：分侧定位并钳位到容器内，环形图定位容器为整行 `.dus-donutRow`；`.dus-tip` 用 `box-sizing:border-box` + `max-width:calc(100% - 16px)` 保证钳位数学不失真。**纵向高度按实际行数估算**（`tipHeightOf(n)`），用常量高估会让卡片整体偏高 50~90px，出现「卡片飘在别处」的错位感。
@@ -185,6 +188,7 @@ UI 描述以本节为准。面板挂在设置页 `settings.section`，`order: 13
 - 回填：`node:zlib` 逐帧解压多帧 zstd 会话文件，递归扫 `~/.dsh/sessions/<workspace编码目录>/<sessionId>/session.v*.jsonl.zstd`；筛四类事件喂同一 fold 状态机（全文件重放以保槽基线），只落 `seq > 水位` 的增量 record。async 分片（每 4 会话让出一拍），动态 foldStates 守卫挡 live 交错。
 - 触发：装载即自动回填一轮（幂等增量，按 marker.done/水位跳过）；进度经 `GET /backfill/status` 轮询，失败信号经 `error` 字段直达面板。`POST /backfill` 保留为宿主侧接口（供外部触发），面板不提供手动按钮。
 - **降级中止**：回填循环体内检查写者身份——锁易主发生在回填中途（每 4 会话让出一次）时，已降级实例必须停止写盘，否则与新持有者并行记账（双计）。
+- **mtime 哨兵的落盘条件要区分两种「零产出」**：①无增量（本会话已折过、此次没有新东西）→ 写 done+mtime，让哨兵生效，下次直接跳过解压；②有增量但 append 全失败（写盘故障窗）→ **不写**（含 done），否则 mtime 哨兵把故障固化、恢复后永不补。只更新局部 `done` 集合而不同步 `markerDone` 会让哨兵永远不落盘，该会话每轮都被重复解压。
 
 ## 8. 测试要求
 
