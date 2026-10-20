@@ -174,7 +174,6 @@ test("summarize：longestChatMs 按 (sessionId, date) 取最大跨度", { timeou
   const span5 = ms(D0, 10, 5) - ms(D0, 10); // 期望值用同一时钟算，避免机器夏令时偏移
   const span10 = ms(D0, 11, 10) - ms(D0, 11);
   assert.equal(summarize([daily], "2026-10-03").longestChatMs, span10);
-  assert.ok(span10 > span5);
 });
 
 test("summarize：streak 三态——今天有 / 今天没有但昨天有 / 断档", { timeout: 5000 }, () => {
@@ -376,4 +375,34 @@ test("modelShares 全期与 summarize 全期口径一致（环图总量 === 摘�
   assert.equal(shares.total, 310); // 100 + 200 + 10
   // 近 N 日窗口仍按今天封顶（未来日期不进窗口）
   assert.equal(modelShares(dailies, 7, today).total, 300);
+});
+
+test("聚合层：含 null 元素的 daily 数组不抛错（畸形输入不得击穿整条路由）", { timeout: 5000 }, () => {
+  // 生产路径已过滤 null，但这几个函数是 __pure 直测面 / 未来其它调用方的入口
+  assert.doesNotThrow(() => modelShares([null], 0, "2026-10-20"), "modelShares 遇 null 应跳过而非抛错");
+  assert.doesNotThrow(() => heatmapDays([null]), "heatmapDays 遇 null 应跳过而非抛错");
+  assert.doesNotThrow(() => trendPoints([null], 7), "trendPoints 遇 null 应跳过而非抛错");
+  assert.doesNotThrow(() => summarize([null], "2026-10-20"), "summarize 遇 null 应跳过而非抛错");
+});
+
+test("addDaysIso：非法日期抛错而非静默产出 NaN-NaN-NaN", { timeout: 5000 }, () => {
+  // "NaN-NaN-NaN" 是 SPEC §5 记录的「静默空白且无报错」故障模式
+  assert.throws(() => addDaysIso("abc", 0), /非法日期/);
+  assert.throws(() => addDaysIso(20260101, 1), /非法日期/);
+  assert.throws(() => addDaysIso("", 0), /非法日期/);
+  assert.equal(addDaysIso("2026-02-28", 1), "2026-03-01", "合法日期仍正常");
+  assert.equal(addDaysIso("2024-02-28", 1), "2024-02-29", "闰年 2/29");
+  assert.equal(addDaysIso("2026-12-31", 1), "2027-01-01", "跨年");
+});
+
+test("summarize：缓存命中率钳到 0-100（跨午夜 replace 差值不得算出 >100% 或负比率）", { timeout: 5000 }, () => {
+  // 跨午夜：add 落前一天、replace 落后一天 → 次日桶为负 → 分子/分母可能为负
+  const daily = {
+    version: 1, date: "2026-10-03",
+    byModel: { "p/m": { uncachedInputTokens: -100, outputTokens: 0, cacheReadTokens: -50, cacheWriteTokens: 0, samples: 1, turns: 0 } },
+    byHour: new Array(24).fill(0),
+    sessions: {},
+  };
+  const s = summarize([daily], "2026-10-03");
+  assert.ok(s.cacheHitRate === null || (s.cacheHitRate >= 0 && s.cacheHitRate <= 100), `命中率应落在 0-100，实际 ${s.cacheHitRate}`);
 });

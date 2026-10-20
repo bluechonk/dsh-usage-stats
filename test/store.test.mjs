@@ -11,6 +11,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -127,7 +128,7 @@ test("store: 锁互斥——持有中再 acquire 抛错，close 后可重获", {
   b.close();
 });
 
-test("store: 陈旧锁（utimesSync 拨旧 mtime ≥5min）接管成功；锁内容含 pid", { timeout: 5000 }, (t) => {
+test("store: 陈旧锁（utimesSync 拨旧 mtime ≥5min）接管成功；锁文件确实被重写", { timeout: 5000 }, (t) => {
   const dir = makeRoot(t);
   const lockPath = join(dir, "lock");
   const a = createStore({ storageRoot: dir, log: silent });
@@ -136,12 +137,48 @@ test("store: 陈旧锁（utimesSync 拨旧 mtime ≥5min）接管成功；锁内
 
   const stale = new Date(Date.now() - 6 * 60 * 1000);
   utimesSync(lockPath, stale, stale);
+  const staleMtime = statSync(lockPath).mtimeMs;
   const b = createStore({ storageRoot: dir, log: silent });
   b.acquireLock(); // 接管不抛
-  assert.match(readFileSync(lockPath, "utf8"), new RegExp(`"pid":${process.pid}`));
+  // 断言用 mtime 前进而非 pid：a/b 同进程 pid 相同，pid 断言对「假接管」无区分力
+  // （变异：接管改成 lockHeld=true 直接 return，锁文件根本没换，pid 断言仍会绿）
+  assert.ok(statSync(lockPath).mtimeMs > staleMtime, "接管必须重写锁文件（mtime 应从陈旧值跳回当前）");
   // 此处不得再 a.close()：锁文件已归 b，a 再删会误伤接管者
   b.close();
   assert.equal(existsSync(lockPath), false);
+});
+
+test("store: 残留的接管 claim 可被回收（否则永久封锁接管，写者永久失效）", { timeout: 5000 }, (t) => {
+  const dir = makeRoot(t);
+  const lockPath = join(dir, "lock");
+  const claimPath = `${lockPath}.claim`;
+  // 造「陈旧锁 + 残留 claim」：持锁实例在接管流程中被 SIGKILL 的现场
+  writeFileSync(lockPath, JSON.stringify({ pid: 888888, at: Date.now() }), "utf8");
+  const stale = new Date(Date.now() - 6 * 60 * 1000);
+  utimesSync(lockPath, stale, stale);
+  writeFileSync(claimPath, JSON.stringify({ pid: 888888, at: Date.now() }), "utf8");
+  utimesSync(claimPath, stale, stale); // claim 也陈旧（持有者已死）
+
+  const store = createStore({ storageRoot: dir, log: silent });
+  // 旧实现：claim 无陈旧判定 → 抢不到就 continue → 3 次耗尽后抛「锁竞争重试耗尽」
+  assert.doesNotThrow(() => store.acquireLock(), "陈旧的残留 claim 必须能被回收，不能永久封锁接管");
+  assert.ok(statSync(lockPath).mtimeMs > stale.getTime(), "接管后锁文件应被重写");
+  store.close();
+});
+
+test("store: 新鲜的 claim 不可被抢（别人正在接管）", { timeout: 5000 }, (t) => {
+  const dir = makeRoot(t);
+  const lockPath = join(dir, "lock");
+  const claimPath = `${lockPath}.claim`;
+  writeFileSync(lockPath, JSON.stringify({ pid: 888888, at: Date.now() }), "utf8");
+  const stale = new Date(Date.now() - 6 * 60 * 1000);
+  utimesSync(lockPath, stale, stale);
+  // claim 是新鲜的（别人正在接管）：本实例不得抢锁
+  writeFileSync(claimPath, JSON.stringify({ pid: 777777, at: Date.now() }), "utf8");
+
+  const store = createStore({ storageRoot: dir, log: silent });
+  assert.throws(() => store.acquireLock(), /锁竞争重试耗尽|另一实例持有锁/, "新鲜的 claim 必须挡住接管");
+  assert.equal(JSON.parse(readFileSync(lockPath, "utf8")).pid, 888888, "原锁不得被改动");
 });
 
 test("store: 降级后重试抢锁不是空操作——lockHeld 残留时以盘上 pid 复核", { timeout: 5000 }, (t) => {

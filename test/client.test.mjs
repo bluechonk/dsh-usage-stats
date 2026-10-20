@@ -154,7 +154,10 @@ test("hmColumnsOf：坏记录逐条跳过、非数组输入也返回 52 列", { 
     const cols = P.hmColumnsOf([bad]);
     assert.equal(cols.length, 52);
     assert.equal(cols[0].length, 7);
-    assert.ok(cols.flat().every((c) => c.rec === false || typeof c === "object"));
+    // 坏记录必须整格丢弃：既不能标「有记录」，也不能带出 tokens/turns
+    const flat = cols.flat();
+    assert.equal(flat.filter((c) => c.rec === true).length, 0, "坏记录不得被当成有记录");
+    assert.ok(flat.every((c) => c.rec === false || (c.tokens > 0 || c.turns > 0)), "有记录的格子必须带有效数值");
   }
   assert.equal(P.hmColumnsOf(null).length, 52);
   assert.equal(P.hmColumnsOf(undefined).length, 52);
@@ -430,14 +433,16 @@ test("paletteVar：6 色循环取用，负索引同余回绕", { timeout: 5000 }
   assert.equal(P.paletteVar(13), "var(--dus-c2)");
 });
 
-test("modelValueOf：正常读取；缺键/坏值/缺 byModel/null 点全兜 0；有限负值保留", { timeout: 5000 }, () => {
+test("modelValueOf：正常读取；缺键/坏值/缺 byModel/null 点全兜 0；负值按 0 处理", { timeout: 5000 }, () => {
   assert.equal(P.modelValueOf({ byModel: { a: 5, b: "x" } }, "a"), 5);
   assert.equal(P.modelValueOf({ byModel: { a: 5 } }, "zz"), 0);
   assert.equal(P.modelValueOf({ byModel: { a: "oops" } }, "a"), 0);
   assert.equal(P.modelValueOf({}, "a"), 0);
   assert.equal(P.modelValueOf(null, "a"), 0);
   assert.equal(P.modelValueOf({ byModel: null }, "a"), 0);
-  assert.equal(P.modelValueOf({ byModel: { a: -2.5 } }, "a"), -2.5); // 负增量过滤是调用方的事
+  // 负值按 0：来自「add 落前一天、replace 落后一天（跨午夜）」的归日错配——
+  // 真源保持真实累加（负差值自然抵消是 SPEC §2 的对账基础），但图表不能画负值
+  assert.equal(P.modelValueOf({ byModel: { a: -2.5 } }, "a"), 0);
 });
 
 test("trendModelRowsOf：跨点并集、按总量降序、零/负总量滤除；空与坏输入=空表", { timeout: 5000 }, () => {
@@ -754,50 +759,35 @@ test("client 模块 id 必须与包名逐字一致（否则宿主拒绝加载整
 // 纯函数直测面覆盖不到组件体内的变量引用——曾出现「删掉 visibleRows 别名却漏改 3 处引用」，
 // 单元测试全绿、真机整页降级为兜底横幅。
 //
-// 这里不模拟 React：桩的 useState 顺序对不上组件内部顺序，覆盖不到深层分支
-// （曾验证过：注入了同样的 bug，桩版冒烟仍全绿）。改用**静态未定义标识符检查**——
-// 把 client.js 里所有 `el(...)`/JSX 位置引用到的标识符，与文件内声明过的标识符集合比对，
-// 出现「引用了但从未声明」的名字即失败。这对「改名后漏改引用」这类改动是精准打击。
+// 关键：**必须直接调用组件函数**（`UI.X(props)`），不能用 `react.createElement(UI.X, props)`
+// ——后者只构造元素对象、从不执行函数体，组件里的一切都测不到（曾验证：注入
+// 「引用未定义变量」的变异，createElement 版冒烟全绿）。
 const UI = captured.__ui;
 const react = reactStub;
 
-/** 深度遍历渲染树，收集元素节点（桩的 createElement 返回 {t,p,c}）。 */
+/** 深度遍历渲染树，收集元素节点。
+ *  client.js 的 el() 走 jsx 桩 → 节点形状是 {type, props}，children 在 props.children。 */
 function collect(node, out = []) {
   if (node === null || node === undefined || typeof node !== "object") return out;
   if (Array.isArray(node)) {
     for (const child of node) collect(child, out);
     return out;
   }
-  if (node.t !== undefined) out.push(node);
-  if (Array.isArray(node.c)) for (const child of node.c) collect(child, out);
+  if (node.type !== undefined) out.push(node);
+  if (node.props?.children !== undefined) collect(node.props.children, out);
   return out;
 }
 
-/** 文件内声明过的标识符：函数/类/const/let/var/参数/属性简写等。 */
-function declaredNames(src) {
-  const names = new Set();
-  const patterns = [
-    /\bfunction\s+([A-Za-z_$][\w$]*)/g,          // function foo
-    /\bclass\s+([A-Za-z_$][\w$]*)/g,              // class Foo
-    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g,    // const foo
-    /\b(?:const|let|var)\s*\{([^}]*)\}/g,          // const { a, b }
-    /\(([^()]*)\)\s*=>/g,                           // (a, b) => 参数
-    /\bfunction\s*\w*\s*\(([^)]*)\)/g,               // function (a, b)
-  ];
-  for (const re of patterns) {
-    let m;
-    while ((m = re.exec(src)) !== null) {
-      const chunk = m[1];
-      for (const raw of chunk.split(",")) {
-        const name = raw.trim().split(/[=:]/)[0].trim().replace(/^\.\.\./, "").replace(/^\{/, "").replace(/\}$/, "").trim();
-        if (/^[A-Za-z_$][\w$]*$/.test(name)) names.add(name);
-      }
-    }
-  }
-  return names;
+/** 渲染树里的文本节点拼接（用于断言文案确实渲染出来了）。 */
+function texts(node, out = []) {
+  if (node === null || node === undefined) return out;
+  if (typeof node === "string" || typeof node === "number") { out.push(String(node)); return out; }
+  if (Array.isArray(node)) { for (const child of node) texts(child, out); return out; }
+  if (node.props?.children !== undefined) texts(node.props.children, out);
+  return out;
 }
 
-test("渲染冒烟：各组件在典型数据下不抛异常（未定义变量等）", { timeout: 5000 }, () => {
+test("渲染冒烟：直接调用组件函数，函数体内的引用错误会被抛出", { timeout: 5000 }, () => {
   const days = [{ date: P.dateKey(new Date()), tokens: 120000000, turns: 3 }];
   const points = [{
     date: P.dateKey(new Date()),
@@ -812,20 +802,34 @@ test("渲染冒烟：各组件在典型数据下不抛异常（未定义变量�
   };
 
   const cases = [
-    ["SummaryStrip", () => react.createElement(UI.SummaryStrip, { summary })],
-    ["HeatmapCard", () => react.createElement(UI.HeatmapCard, { days, mode: "daily", onMode: () => {}, stale: false })],
-    ["TrendCard", () => react.createElement(UI.TrendCard, {
+    ["SummaryStrip", () => UI.SummaryStrip({ summary })],
+    ["HeatmapCard", () => UI.HeatmapCard({ days, mode: "daily", onMode: () => {}, stale: false })],
+    ["TrendCard", () => UI.TrendCard({
       trend: { granularity: "day", points }, err: false, onRetry: () => {}, rangeLabel: "近 7 日",
     })],
-    ["DonutCard", () => react.createElement(UI.DonutCard, { modelsResp, err: false, onRetry: () => {} })],
-    ["Pills", () => react.createElement(UI.Pills, { options: [{ value: 7, label: "近 7 日" }], value: 7, onChange: () => {} })],
+    ["DonutCard", () => UI.DonutCard({ modelsResp, err: false, onRetry: () => {} })],
+    ["Pills", () => UI.Pills({ options: [{ value: 7, label: "近 7 日" }], value: 7, onChange: () => {} })],
   ];
   for (const [name, render] of cases) {
     let tree = null;
-    assert.doesNotThrow(() => { tree = render(); }, `${name} 渲染抛异常`);
+    assert.doesNotThrow(() => { tree = render(); }, `${name} 渲染抛异常（函数体未执行或引用了未定义变量）`);
     const nodes = collect(tree);
     assert.ok(nodes.length > 0, `${name} 应渲染出元素`);
   }
+});
+
+test("渲染冒烟：摘要条真的渲染出六格与文案", { timeout: 5000 }, () => {
+  const summary = {
+    since: "2026-10-01", totalTokens: 1500, peakDay: { date: "2026-10-03", tokens: 900 },
+    longestChatMs: 3600000, currentStreakDays: 2, longestStreakDays: 5,
+    cacheReadTokens: 900, uncachedInputTokens: 100, cacheHitRate: 90,
+  };
+  const tree = UI.SummaryStrip({ summary });
+  const all = texts(tree).join("|");
+  for (const label of ["累计 Token 数", "峰值 Token 数", "缓存命中率", "最长聊天时长", "当前连续天数", "最长连续天数"]) {
+    assert.ok(all.includes(label), `摘要条应渲染出标签「${label}」`);
+  }
+  assert.ok(all.includes("90.0%"), "摘要条应渲染出缓存命中率数值");
 });
 
 test("渲染冒烟：覆盖到「悬停态」分支（趋势图的 tooltip 行计算）", { timeout: 5000 }, () => {
@@ -850,7 +854,7 @@ test("渲染冒烟：覆盖到「悬停态」分支（趋势图的 tooltip 行�
   try {
     let tree = null;
     assert.doesNotThrow(() => {
-      tree = react.createElement(UI.TrendCard, {
+      tree = UI.TrendCard({
         trend: { granularity: "day", points }, err: false, onRetry: () => {}, rangeLabel: "近 7 日",
       });
     }, "趋势图悬停态渲染抛异常（未定义变量等）");
@@ -863,18 +867,29 @@ test("渲染冒烟：覆盖到「悬停态」分支（趋势图的 tooltip 行�
 test("渲染冒烟：环图数据含 null 元素不炸（脏数据防护）", { timeout: 5000 }, () => {
   const modelsResp = { models: [null, { key: "p/m1", tokens: 10 }], total: 10 };
   let tree = null;
-  assert.doesNotThrow(() => { tree = react.createElement(UI.DonutCard, { modelsResp, err: false, onRetry: () => {} }); });
+  assert.doesNotThrow(() => { tree = UI.DonutCard({ modelsResp, err: false, onRetry: () => {} }); });
   assert.ok(collect(tree).length > 0);
+  // 行为断言：坏元素被跳过，只剩一个模型
+  const all = texts(tree).join("|");
+  assert.ok(all.includes("p/m1"), "合法模型应渲染出来");
+  assert.ok(!all.includes("null"), "null 元素不应进入渲染结果");
 });
 
-test("渲染冒烟：图例的可见行与全部模型行恒等（别名不得被拆）", { timeout: 5000 }, () => {
-  // visibleRows 是趋势图里多处引用的锚点：拆掉它（改写为 modelRows）极易漏改引用，
-  // 而漏改引用只在真机渲染到那几行时才抛 ReferenceError —— 单元测试覆盖不到
-  // （桩渲染的 useState 顺序对不上，覆盖不到深层分支；真机 CDP 冒烟才抓到过）。
-  // 这里锁死「visibleRows 必须存在且被多处引用」，防止后续再有人把它删掉。
-  assert.ok(clientSrc.includes("const visibleRows = modelRows;"), "visibleRows 别名被拆掉了——多处引用会失配");
-  const uses = (clientSrc.match(/visibleRows/g) || []).length;
-  assert.ok(uses >= 4, "visibleRows 引用点过少（定义 + 至少 3 处使用），疑似残留半拆");
+test("渲染冒烟：图例列出全部有量模型，不隐藏不截断（行为断言，非源码 grep）", { timeout: 5000 }, () => {
+  // 曾经的源码 grep 版断言过紧：一次完全正确的改名（visibleRows → legendRows）就会误杀，
+  // 同时又太松（把 visibleRows 改成 modelRows.slice(0,1) 也只因字面量对不上而红）。
+  const rows = P.trendModelRowsOf([
+    { byModel: { "p/a": 10, "p/b": 30 } },
+    { byModel: { "p/a": 5, "p/c": 0 } },
+    { byModel: { "p/d": 1 } },
+  ]);
+  assert.deepEqual(rows.map((r) => r.key), ["p/b", "p/a", "p/d"], "图例必须列出全部有量模型");
+  // 组件层：图例项应等于全部模型行数，且以 span 渲染（不可点击）
+  const points = [{ date: P.dateKey(new Date()), byModel: { "p/a": 10, "p/b": 30, "p/d": 1 }, total: 41 }];
+  const tree = UI.TrendCard({ trend: { granularity: "day", points }, err: false, onRetry: () => {}, rangeLabel: "近 7 日" });
+  const items = collect(tree).filter((n) => n.props?.className === "dus-legendItem");
+  assert.equal(items.length, 3, "图例应列出全部 3 个有量模型");
+  assert.ok(items.every((n) => n.type === "span"), "图例项必须是 span（不可点击）");
 });
 
 //#endregion

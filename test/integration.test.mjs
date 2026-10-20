@@ -5,7 +5,7 @@
 // 全部走 mock ctx 驱动真实 apply()，不改任何生产代码路径。
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, statSync, utimesSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, statSync, utimesSync, readdirSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdCompressSync } from "node:zlib";
@@ -71,20 +71,17 @@ function appendSessionEvents(sessionsRoot, ws, sid, events) {
   writeFileSync(file, Buffer.concat([readFileSync(file), zstdCompressSync(Buffer.from(lines, "utf8"))]));
 }
 
-function recordsOf(storageRoot) {
-  const out = [];
-  for (const name of ["records-2026-01.jsonl", "records-2026-02.jsonl"]) {
-    const p = join(storageRoot, name);
-    if (!existsSync(p)) continue;
-    for (const line of readFileSync(p, "utf8").split("\n")) {
-      if (line.trim()) out.push(JSON.parse(line));
-    }
-  }
-  return out;
+/** 四桶之和（SPEC §2 的统一 totalTokens 口径）。
+ *  断言「四桶求和 == 官方 totals」时必须用它——只加 uncachedInputTokens 一个桶
+ *  在其余三桶恰为 0 的夹具上才巧合成立，换个夹具就量纲错配。 */
+function fourBuckets(usage) {
+  return (usage?.uncachedInputTokens ?? 0) + (usage?.outputTokens ?? 0)
+    + (usage?.cacheReadTokens ?? 0) + (usage?.cacheWriteTokens ?? 0);
 }
 
-/** 全量流水（任意月份）：文件名序 + 行序——与 store.readAllRecords 同语义，测试侧独立实现。 */
-function recordsAll(storageRoot) {
+/** 全量流水（任意月份）：文件名序 + 行序——与 store.readAllRecords 同语义，测试侧独立实现。
+ *  不硬编码月份文件名：事件时间戳用「相对今天」构造，月份随日期变。 */
+function recordsOf(storageRoot) {
   const out = [];
   for (const name of readdirSync(storageRoot).sort()) {
     if (!/^records-\d{4}-\d{2}\.jsonl$/.test(name)) continue;
@@ -93,6 +90,11 @@ function recordsAll(storageRoot) {
     }
   }
   return out;
+}
+
+/** recordsAll 与 recordsOf 同语义（保留旧名以免大批调用点改动）。 */
+function recordsAll(storageRoot) {
+  return recordsOf(storageRoot);
 }
 
 /** 捕获路由的 mock ctx（inline 形态收敛成工厂）：routes 供直调 handler 伪造 req/res。 */
@@ -139,7 +141,17 @@ function isoLocal(ms) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const T0 = new Date(2026, 0, 15, 10, 0, 0).getTime(); // 2026-01-15 本地
+/** 相对今天的某个时刻（毫秒）：避免硬编码日期随时间推移落出热力图 366 天窗口
+ *  （SPEC §8：事件时间戳必须落在窗口内）。 */
+function daysAgoAt(days, hour = 10) {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  d.setHours(hour, 0, 0, 0);
+  return d.getTime();
+}
+
+// 相对今天而非硬编码日期：热力图只回看 366 天，硬编码日期到期后测试会集体变红
+const T0 = daysAgoAt(10);
 
 test31("live 采集 → 重启 → auto-backfill 不双计（水位法）", async () => {
   const root = mkdtempSync(join(tmpdir(), "dus-it-"));
@@ -175,8 +187,11 @@ test31("live 采集 → 重启 → auto-backfill 不双计（水位法）", asyn
     await sleep(50);
     records = recordsOf(storageRoot);
     assert.equal(records.length, 4, `重启后回填只补水位后增量，仍 4 条（双计则会是 7）`);
-    const total = records.reduce((acc, r) => acc + r.usage.uncachedInputTokens, 0);
-    assert.equal(total, 100 + 200 + 300 + 400, "四桶求和 == 官方 totals 口径，无双计");
+    const total = records.reduce((acc, r) => acc + fourBuckets(r.usage), 0);
+  // 四桶和 = 输入桶之和 + 10×add 记录数：只有 kind==='add' 的记录带 outputTokens=10，
+  // replace 记录装的是差值（输出桶差为 0），故按 add 记录数计。
+    // msgEvent 每条 usage = {inputTokens: N, outputTokens: 10}，故四桶和 = 输入和 + 10×条数
+    assert.equal(total, (100 + 200 + 300 + 400) + 10 * 4, "四桶求和 == 官方 totals 口径，无双计");
     for (const dispose of ctx2.disposers) await dispose();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -222,8 +237,10 @@ test31("live 续采的已回填会话重启后，尾部增量补齐且不双计�
     ctx2.handlers["session/event"]({ id: sid }, msgEvent(sid, 6, 6, 600, T0 + 5000));
     records = recordsOf(storageRoot);
     assert.equal(records.length, 6, "重启后 live 新轮次正常记账");
-    const total = records.reduce((acc, r) => acc + r.usage.uncachedInputTokens, 0);
-    assert.equal(total, 100 + 200 + 300 + 400 + 500 + 600, "无双计无丢失");
+    const total = records.reduce((acc, r) => acc + fourBuckets(r.usage), 0);
+  // 四桶和 = 输入桶之和 + 10×add 记录数：只有 kind==='add' 的记录带 outputTokens=10，
+  // replace 记录装的是差值（输出桶差为 0），故按 add 记录数计。
+    assert.equal(total, (100 + 200 + 300 + 400 + 500 + 600) + 10 * 6, "无双计无丢失（四桶和 = 输入和 + 10×条数）");
     for (const dispose of ctx2.disposers) await dispose();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -293,8 +310,10 @@ test31("替换窗跨进程边界——回填 fold 全文件重放，槽基线不
     apply(ctx2, { storageRoot, sessionsRoot });
     await sleep(50);
     const records = recordsOf(storageRoot);
-    const total = records.reduce((acc, r) => acc + r.usage.uncachedInputTokens, 0);
-    assert.equal(total, 300, `增量流求和 == 官方 totals 300（基线丢失则 50+300=350）`);
+    const total = records.reduce((acc, r) => acc + fourBuckets(r.usage), 0);
+  // 四桶和 = 输入桶之和 + 10×add 记录数：只有 kind==='add' 的记录带 outputTokens=10，
+  // replace 记录装的是差值（输出桶差为 0），故按 add 记录数计。
+    assert.equal(total, 300 + 10 * records.filter((r) => r.kind === 'add').length, `增量流求和 == 官方 totals（四桶和；基线丢失则再多 50）`);
     const replaceRow = records.find((r) => r.kind === "replace");
     assert.ok(replaceRow, "补的应是 replace 差值 250");
     assert.equal(replaceRow.usage.uncachedInputTokens, 250);
@@ -340,8 +359,10 @@ test31("SIGKILL 后从 records 推导水位——重启回填不双计（架构�
     const records = recordsOf(storageRoot);
     assert.equal(records.length, 3, "重启回填从 records 推导水位，不重折不双计（崩溃窗零丢失）");
     assert.equal(records.filter((r) => r.seq === 3).length, 1, "推导水位=records 按 sid 聚合 max(seq)：崩溃前最后一条恰好记账一次");
-    const total = records.reduce((acc, r) => acc + r.usage.uncachedInputTokens, 0);
-    assert.equal(total, 600, "总账 600 无双计");
+    const total = records.reduce((acc, r) => acc + fourBuckets(r.usage), 0);
+  // 四桶和 = 输入桶之和 + 10×add 记录数：只有 kind==='add' 的记录带 outputTokens=10，
+  // replace 记录装的是差值（输出桶差为 0），故按 add 记录数计。
+    assert.equal(total, 600 + 10 * records.filter((r) => r.kind === 'add').length, "总账无双计（四桶和 = 输入和 + 10×条数）");
     for (const dispose of ctx2.disposers) await dispose();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -423,8 +444,10 @@ test31("装载后回填前的 live 事件不抹盘上 marker（清空窗：live 
     const records = recordsOf(storageRoot);
     assert.equal(records.length, 1, "预置水位=2 已记账 seq1/2，唯一增量是 live 的 seq3");
     assert.equal(records[0].seq, 3, "record 带 seq 字段（推导水位的原料）");
-    const total = records.reduce((acc, r) => acc + r.usage.uncachedInputTokens, 0);
-    assert.equal(total, 300, "全量重折则是 600，推导水位挡住");
+    const total = records.reduce((acc, r) => acc + fourBuckets(r.usage), 0);
+  // 四桶和 = 输入桶之和 + 10×add 记录数：只有 kind==='add' 的记录带 outputTokens=10，
+  // replace 记录装的是差值（输出桶差为 0），故按 add 记录数计。
+    assert.equal(total, 300 + 10 * records.filter((r) => r.kind === 'add').length, "全量重折会翻倍，推导水位挡住（四桶和）");
     for (const dispose of ctx.disposers) await dispose();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -463,8 +486,10 @@ test31("done-only 会话经 mtime 哨兵 bootstrap 水位，此后增量可补�
     await sleep(150);
     records = recordsOf(storageRoot);
     assert.equal(records.length, 1, "bootstrap 后的增量可补");
-    const total = records.reduce((acc, r) => acc + r.usage.uncachedInputTokens, 0);
-    assert.equal(total, 300, "补的正是停用窗那条");
+    const total = records.reduce((acc, r) => acc + fourBuckets(r.usage), 0);
+  // 四桶和 = 输入桶之和 + 10×add 记录数：只有 kind==='add' 的记录带 outputTokens=10，
+  // replace 记录装的是差值（输出桶差为 0），故按 add 记录数计。
+    assert.equal(total, 300 + 10 * records.filter((r) => r.kind === 'add').length, "补的正是停用窗那条（四桶和）");
     for (const dispose of ctx2.disposers) await dispose();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -513,27 +538,30 @@ test31("回填期 append 失败不推水位——磁盘恢复后下轮补齐", a
       msgEvent(sid, 3, 3, 300, T0 + 20),
     ]);
     // records 目标路径被同名目录占位 → append 全失败（模拟磁盘/权限故障）
+    // 月份随事件时间走：动态算出当月的流水文件名
+    const monthName = `records-${isoLocal(T0).slice(0, 7)}.jsonl`;
     const { mkdirSync: mk } = await import("node:fs");
-    mk(join(storageRoot, "records-2026-01.jsonl"), { recursive: true });
+    mk(join(storageRoot, monthName), { recursive: true });
     const ctx1 = makeMockCtx();
     apply(ctx1, { storageRoot, sessionsRoot });
     await sleep(150);
-    // 零固化断言：append 全失败时 marker 要么不存在要么无该 sid 水位/mtimes（写了=mtime 哨兵把故障窗固化）
+    // 零固化断言（无条件）：append 全失败时**不得写** marker——mtime 哨兵一旦写下，
+    // 故障窗就被固化（文件恢复后 mtime 变了但哨兵匹配不上 → 反而会重折，风险方向相反；
+    // 真正的问题是水位/哨兵把「已折过但没落盘」的状态固化）。
+    // 此前这条断言被 `if (existsSync(markerPath))` 包住，实测该分支从不进入 → 整段是死代码。
     const markerPath = join(storageRoot, "backfill-marker.json");
-    if (existsSync(markerPath)) {
-      const marker = JSON.parse(readFileSync(markerPath, "utf8"));
-      assert.equal(Number(marker.watermarks?.[sid] ?? 0), 0, "append 全失败水位不推进（故障窗越过则=3）");
-      assert.equal(Number.isFinite(Number(marker.mtimes?.[sid])), false, "append 全失败不写 mtime 哨兵（写了=故障窗固化）");
-    }
+    assert.equal(existsSync(markerPath), false, "append 全失败时不得写 marker（否则故障窗被固化）");
     for (const dispose of ctx1.disposers) await dispose(); // 释放锁（模拟进程正常退出——不释放则 ctx2 降级镜像）
     // 磁盘恢复：删占位目录，重新装载回填 → 全部补齐
-    rmSync(join(storageRoot, "records-2026-01.jsonl"), { recursive: true, force: true });
+    rmSync(join(storageRoot, monthName), { recursive: true, force: true });
     const ctx2 = makeMockCtx();
     apply(ctx2, { storageRoot, sessionsRoot });
     await sleep(150);
     const records = recordsOf(storageRoot);
-    const total = records.reduce((acc, r) => acc + r.usage.uncachedInputTokens, 0);
-    assert.equal(total, 600, "恢复后下轮回填补齐全部（水位曾越过则永远 0）");
+    const total = records.reduce((acc, r) => acc + fourBuckets(r.usage), 0);
+  // 四桶和 = 输入桶之和 + 10×add 记录数：只有 kind==='add' 的记录带 outputTokens=10，
+  // replace 记录装的是差值（输出桶差为 0），故按 add 记录数计。
+    assert.equal(total, 600 + 10 * records.filter((r) => r.kind === 'add').length, "恢复后下轮回填补齐全部（水位曾越过则永远 0；四桶和）");
     for (const dispose of ctx2.disposers) await dispose();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -625,8 +653,10 @@ test31("推导水位=records 聚合（含 live append）——整个 marker 删�
     const records = recordsAll(storageRoot);
     assert.equal(records.length, 4, "marker 全丢后从 records 推导水位=4，全量重放零追加（旧架构会重折出 7 条）");
     assert.deepEqual([...new Set(records.map((r) => r.seq))].sort(), [1, 2, 3, 4], "每条 seq 恰好一次");
-    const total = records.reduce((acc, r) => acc + r.usage.uncachedInputTokens, 0);
-    assert.equal(total, 1000, "总账 1000 无双计");
+    const total = records.reduce((acc, r) => acc + fourBuckets(r.usage), 0);
+  // 四桶和 = 输入桶之和 + 10×add 记录数：只有 kind==='add' 的记录带 outputTokens=10，
+  // replace 记录装的是差值（输出桶差为 0），故按 add 记录数计。
+    assert.equal(total, 1000 + 10 * records.filter((r) => r.kind === 'add').length, "总账无双计（四桶和 = 输入和 + 10×条数）");
     assert.equal(existsSync(join(storageRoot, "backfill-marker.json")), false, "零追加不写 marker（marker 丢失只损失哨兵加速，不损正确性）");
     for (const dispose of ctx2.disposers) await dispose();
   } finally {
@@ -943,7 +973,7 @@ test31("重启后同一轮不重复计轮——daily 的 seenTurns 从当日 rec
     const ws = "--ws--";
     const sid = "sess-turns-1";
     // 热力图只回看 366 天：事件必须落在窗口内，否则该日不在 heatmap 结果里
-    const T = new Date(2026, 9, 10, 10, 0, 0).getTime(); // 2026-10-10 本地
+    const T = daysAgoAt(3);
     writeSessionFile(sessionsRoot, ws, sid, [
       { type: "session", version: 4, id: "x", createdAt: T },
       msgEvent(sid, 1, 1, 100, T),
@@ -983,7 +1013,7 @@ test31("daily 内容陈旧时自愈重建（日期集一致但内容为空 → �
     const ws = "--ws--";
     const sid = "sess-stale-1";
     // 事件必须落在热力图回看窗口内（366 天），否则 summary 口径与断言不符
-    const T = new Date(2026, 9, 10, 10, 0, 0).getTime(); // 2026-10-10 本地
+    const T = daysAgoAt(3);
     writeSessionFile(sessionsRoot, ws, sid, [
       { type: "session", version: 4, id: "x", createdAt: T },
       msgEvent(sid, 1, 1, 100, T),
@@ -1024,7 +1054,7 @@ test31("回填无增量时也落 mtime 哨兵（稳态不重复解压会话文�
     const sessionsRoot = join(root, "sessions");
     const ws = "--ws--";
     const sid = "sess-sentinel-1";
-    const T = new Date(2026, 9, 10, 10, 0, 0).getTime();
+    const T = daysAgoAt(3);
     writeSessionFile(sessionsRoot, ws, sid, [
       { type: "session", version: 4, id: "x", createdAt: T },
       msgEvent(sid, 1, 1, 100, T),
@@ -1064,7 +1094,7 @@ test31("API 契约：四条只读路由的响应形状逐字段断言（SPEC §5
     const sessionsRoot = join(root, "sessions");
     const ws = "--ws--";
     const sid = "sess-contract-1";
-    const T = new Date(2026, 9, 10, 10, 0, 0).getTime();
+    const T = daysAgoAt(3);
     writeSessionFile(sessionsRoot, ws, sid, [
       { type: "session", version: 4, id: "x", createdAt: T },
       msgEvent(sid, 1, 1, 100, T),
@@ -1128,6 +1158,82 @@ test31("API 契约：四条只读路由的响应形状逐字段断言（SPEC §5
     // 环图总量必须等于摘要条累计（全期口径一致）
     assert.equal(models.total, summary.totalTokens, "模型用量全期总量必须等于摘要条累计（口径一致）");
 
+    for (const dispose of ctx.disposers) await dispose();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test31("records 里的「数字字符串 time」不得让日聚合重建整体抛错", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dus-strtime-"));
+  try {
+    const storageRoot = join(root, "stats");
+    const sessionsRoot = join(root, "sessions");
+    const ws = "--ws--";
+    const sid = "sess-strtime-1";
+    const T = daysAgoAt(3);
+    writeSessionFile(sessionsRoot, ws, sid, [
+      { type: "session", version: 4, id: "x", createdAt: T },
+      msgEvent(sid, 1, 1, 100, T),
+    ]);
+
+    // 第一轮：正常回填
+    const ctx1 = makeRouteCaptureCtx();
+    apply(ctx1, { storageRoot, sessionsRoot });
+    await sleep(150);
+    for (const dispose of ctx1.disposers) await dispose();
+
+    // 手工往 records 里塞一行「数字字符串 time」：外部工具导出常见这种形态。
+    // 旧实现：Number(time)>0 能通过过滤，但 isoOf(字符串) → Invalid Date → 索引键 "NaN-NaN-NaN"
+    //        → writeDaily 抛「非法日期」→ 整轮日聚合重建中断（真源在盘上却全线停摆）
+    const monthName = `records-${isoLocal(T).slice(0, 7)}.jsonl`;
+    const recordsPath = join(storageRoot, monthName);
+    const bad = { time: String(T), seq: 99, sessionId: sid, provider: "p", model: "m", turn: 1, step: 1, kind: "add", usage: { uncachedInputTokens: 5, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+    appendFileSync(recordsPath, JSON.stringify(bad) + "\n", "utf8");
+
+    // 第二轮：畸形行不得让 summary 500，也不得污染合法日期
+    const ctx2 = makeRouteCaptureCtx();
+    apply(ctx2, { storageRoot, sessionsRoot });
+    await sleep(200);
+    const summary2 = ctx2.routes.find((r) => r.path.endsWith("/summary"));
+    const res = await callRoute(summary2, "GET", "/api/dsh-usage-stats/summary");
+    assert.equal(res.status, 200, "畸形 time 不得让读面 500");
+    const s = JSON.parse(res.body);
+    assert.ok(s.totalTokens > 0, `合法用量应照常统计（实际 ${s.totalTokens}）`);
+    for (const dispose of ctx2.disposers) await dispose();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test31("daily 写盘失败只降级缓存，不得冒充「回填失败」并中断整轮重建", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dus-dailyfail-"));
+  try {
+    const storageRoot = join(root, "stats");
+    const sessionsRoot = join(root, "sessions");
+    const ws = "--ws--";
+    const sid = "sess-dailyfail-1";
+    const T = daysAgoAt(3);
+    writeSessionFile(sessionsRoot, ws, sid, [
+      { type: "session", version: 4, id: "x", createdAt: T },
+      msgEvent(sid, 1, 1, 100, T),
+    ]);
+    // daily 目标路径被同名目录占位 → writeDaily 必失败（EEXIST）
+    const dailyDir = join(storageRoot, "daily");
+    mkdirSync(dailyDir, { recursive: true });
+    mkdirSync(join(dailyDir, `${isoLocal(T)}.json`), { recursive: true });
+
+    const ctx = makeRouteCaptureCtx();
+    apply(ctx, { storageRoot, sessionsRoot });
+    await sleep(200);
+    // 回填状态不得报「失败」——真源 records 明明在盘上
+    const status = ctx.routes.find((r) => r.path.endsWith("/backfill/status"));
+    const st = JSON.parse((await callRoute(status, "GET", "/api/dsh-usage-stats/backfill/status")).body);
+    assert.equal(st.error, null, `daily 写失败不得冒充回填失败（error=${st.error}）`);
+    // 读面仍须可用（daily 是缓存，不是真源）
+    const summary = ctx.routes.find((r) => r.path.endsWith("/summary"));
+    const res = await callRoute(summary, "GET", "/api/dsh-usage-stats/summary");
+    assert.equal(res.status, 200, "daily 写失败不得让读面 500");
     for (const dispose of ctx.disposers) await dispose();
   } finally {
     rmSync(root, { recursive: true, force: true });
