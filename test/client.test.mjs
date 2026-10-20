@@ -738,3 +738,134 @@ test("client 模块 id 必须与包名逐字一致（否则宿主拒绝加载整
 });
 //#endregion
 
+//#region 渲染冒烟（防「纯函数测过但渲染时炸」）
+// 纯函数直测面覆盖不到组件体内的变量引用——曾出现「删掉 visibleRows 别名却漏改 3 处引用」，
+// 单元测试全绿、真机整页降级为兜底横幅。
+//
+// 这里不模拟 React：桩的 useState 顺序对不上组件内部顺序，覆盖不到深层分支
+// （曾验证过：注入了同样的 bug，桩版冒烟仍全绿）。改用**静态未定义标识符检查**——
+// 把 client.js 里所有 `el(...)`/JSX 位置引用到的标识符，与文件内声明过的标识符集合比对，
+// 出现「引用了但从未声明」的名字即失败。这对「改名后漏改引用」这类改动是精准打击。
+const UI = captured.__ui;
+const react = reactStub;
+
+/** 深度遍历渲染树，收集元素节点（桩的 createElement 返回 {t,p,c}）。 */
+function collect(node, out = []) {
+  if (node === null || node === undefined || typeof node !== "object") return out;
+  if (Array.isArray(node)) {
+    for (const child of node) collect(child, out);
+    return out;
+  }
+  if (node.t !== undefined) out.push(node);
+  if (Array.isArray(node.c)) for (const child of node.c) collect(child, out);
+  return out;
+}
+
+/** 文件内声明过的标识符：函数/类/const/let/var/参数/属性简写等。 */
+function declaredNames(src) {
+  const names = new Set();
+  const patterns = [
+    /\bfunction\s+([A-Za-z_$][\w$]*)/g,          // function foo
+    /\bclass\s+([A-Za-z_$][\w$]*)/g,              // class Foo
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g,    // const foo
+    /\b(?:const|let|var)\s*\{([^}]*)\}/g,          // const { a, b }
+    /\(([^()]*)\)\s*=>/g,                           // (a, b) => 参数
+    /\bfunction\s*\w*\s*\(([^)]*)\)/g,               // function (a, b)
+  ];
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      const chunk = m[1];
+      for (const raw of chunk.split(",")) {
+        const name = raw.trim().split(/[=:]/)[0].trim().replace(/^\.\.\./, "").replace(/^\{/, "").replace(/\}$/, "").trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(name)) names.add(name);
+      }
+    }
+  }
+  return names;
+}
+
+test("渲染冒烟：各组件在典型数据下不抛异常（未定义变量等）", { timeout: 5000 }, () => {
+  const days = [{ date: P.dateKey(new Date()), tokens: 120000000, turns: 3 }];
+  const points = [{
+    date: P.dateKey(new Date()),
+    byModel: { "p/m1": 1000, "p/m2": 500 },
+    total: 1500,
+  }];
+  const modelsResp = { models: [{ key: "p/m1", provider: "p", model: "m1", tokens: 1000, share: 0.67 }], total: 1500 };
+  const summary = {
+    since: "2026-10-01", totalTokens: 1500, peakDay: { date: "2026-10-03", tokens: 900 },
+    longestChatMs: 3600000, currentStreakDays: 2, longestStreakDays: 5,
+    cacheReadTokens: 900, uncachedInputTokens: 100, cacheHitRate: 90,
+  };
+
+  const cases = [
+    ["SummaryStrip", () => react.createElement(UI.SummaryStrip, { summary })],
+    ["HeatmapCard", () => react.createElement(UI.HeatmapCard, { days, mode: "daily", onMode: () => {}, stale: false })],
+    ["TrendCard", () => react.createElement(UI.TrendCard, {
+      trend: { granularity: "day", points }, err: false, onRetry: () => {}, rangeLabel: "近 7 日",
+    })],
+    ["DonutCard", () => react.createElement(UI.DonutCard, { modelsResp, err: false, onRetry: () => {} })],
+    ["Pills", () => react.createElement(UI.Pills, { options: [{ value: 7, label: "近 7 日" }], value: 7, onChange: () => {} })],
+  ];
+  for (const [name, render] of cases) {
+    let tree = null;
+    assert.doesNotThrow(() => { tree = render(); }, `${name} 渲染抛异常`);
+    const nodes = collect(tree);
+    assert.ok(nodes.length > 0, `${name} 应渲染出元素`);
+  }
+});
+
+test("渲染冒烟：覆盖到「悬停态」分支（趋势图的 tooltip 行计算）", { timeout: 5000 }, () => {
+  // 桩的 useState 恒返回初值，hover/cursor 恒为 null → 走不到 tipRowsOf 那行。
+  // 让桩的前若干次 useState 返回「已悬停」对象，强制走到 tooltip 行计算。
+  const points = [{
+    date: P.dateKey(new Date()),
+    byModel: { "p/m1": 1000, "p/m2": 500 },
+    total: 1500,
+  }];
+  const hoverState = { idx: 0, x: 100, y: 50, cw: 800, ch: 200 };
+  const origUseState = reactStub.useState;
+  let calls = 0;
+  reactStub.useState = (v) => {
+    calls += 1;
+    // TrendCard 内的 useState 依次是：hover(null) / cursor(null) / ...；
+    // 前两个返回悬停/游标态，其余照旧
+    if (calls === 1) return [hoverState, () => {}];
+    if (calls === 2) return [0, () => {}];
+    return origUseState(v);
+  };
+  try {
+    let tree = null;
+    assert.doesNotThrow(() => {
+      tree = react.createElement(UI.TrendCard, {
+        trend: { granularity: "day", points }, err: false, onRetry: () => {}, rangeLabel: "近 7 日",
+      });
+    }, "趋势图悬停态渲染抛异常（未定义变量等）");
+    assert.ok(collect(tree).length > 0);
+  } finally {
+    reactStub.useState = origUseState;
+  }
+});
+
+test("渲染冒烟：环图数据含 null 元素不炸（脏数据防护）", { timeout: 5000 }, () => {
+  const modelsResp = { models: [null, { key: "p/m1", tokens: 10 }], total: 10 };
+  let tree = null;
+  assert.doesNotThrow(() => { tree = react.createElement(UI.DonutCard, { modelsResp, err: false, onRetry: () => {} }); });
+  assert.ok(collect(tree).length > 0);
+});
+
+test("渲染冒烟：图例的可见行与全部模型行恒等（别名不得被拆）", { timeout: 5000 }, () => {
+  // visibleRows 是趋势图里多处引用的锚点：拆掉它（改写为 modelRows）极易漏改引用，
+  // 而漏改引用只在真机渲染到那几行时才抛 ReferenceError —— 单元测试覆盖不到
+  // （桩渲染的 useState 顺序对不上，覆盖不到深层分支；真机 CDP 冒烟才抓到过）。
+  // 这里锁死「visibleRows 必须存在且被多处引用」，防止后续再有人把它删掉。
+  assert.ok(clientSrc.includes("const visibleRows = modelRows;"), "visibleRows 别名被拆掉了——多处引用会失配");
+  const uses = (clientSrc.match(/visibleRows/g) || []).length;
+  assert.ok(uses >= 4, "visibleRows 引用点过少（定义 + 至少 3 处使用），疑似残留半拆");
+});
+
+//#endregion
+
+
+

@@ -59,6 +59,7 @@ test("store: monthOf 取本地时区月份，非法时间戳抛错", { timeout: 
 test("store: append 两条不同月 → 两个文件各一行；readAllRecords 按月序+行序还原", { timeout: 5000 }, (t) => {
   const dir = makeRoot(t);
   const store = createStore({ storageRoot: dir, log: silent });
+  store.acquireLock(); // 写路径要求持锁（SPEC §3：写前校验归属）
   const r1 = record(new Date(2026, 8, 15, 12, 0).getTime()); // 本地 9 月
   const r2 = record(new Date(2026, 9, 1, 8, 30).getTime(), {
     kind: "replace",
@@ -74,10 +75,36 @@ test("store: append 两条不同月 → 两个文件各一行；readAllRecords �
   assert.deepEqual(store.readAllRecords(), [r1, r2]); // 月文件序在前、行序在后
 });
 
+test("store: 未持锁时 append 拒绝写入（幽灵写者防线，SPEC §3）", { timeout: 5000 }, (t) => {
+  const dir = makeRoot(t);
+  const log = captureLog();
+  const store = createStore({ storageRoot: dir, log });
+  // 未 acquireLock：append 必须拒绝落盘并返回 false（上层据此不推进记账水位）
+  assert.equal(store.append(record(new Date(2026, 9, 2, 10, 0).getTime())), false);
+  assert.equal(store.readAllRecords().length, 0);
+  assert.equal(log.calls.error.length, 1);
+  // 持锁后可写
+  store.acquireLock();
+  assert.equal(store.append(record(new Date(2026, 9, 2, 10, 0).getTime())), true);
+  assert.equal(store.readAllRecords().length, 1);
+});
+
+test("store: 锁被他人接管后 append 拒绝写入（不覆写对方账本）", { timeout: 5000 }, (t) => {
+  const dir = makeRoot(t);
+  const lockPath = join(dir, "lock");
+  const store = createStore({ storageRoot: dir, log: silent });
+  store.acquireLock();
+  // 模拟陈旧接管：锁内容换成别人的 pid
+  writeFileSync(lockPath, JSON.stringify({ pid: 888888, at: Date.now() }), "utf8");
+  assert.equal(store.append(record(new Date(2026, 9, 2, 10, 0).getTime())), false);
+  assert.equal(store.readAllRecords().length, 0);
+});
+
 test("store: 坏行与非对象行跳过并 warn，好行照常还原", { timeout: 5000 }, (t) => {
   const dir = makeRoot(t);
   const log = captureLog();
   const store = createStore({ storageRoot: dir, log });
+  store.acquireLock();
   const r1 = record(new Date(2026, 9, 2, 10, 0).getTime());
   store.append(r1);
   // 手工塞入坏行：半截写崩溃的 JSON 残迹 + 合法 JSON 但不是记录对象
@@ -117,6 +144,50 @@ test("store: 陈旧锁（utimesSync 拨旧 mtime ≥5min）接管成功；锁内
   assert.equal(existsSync(lockPath), false);
 });
 
+test("store: 降级后重试抢锁不是空操作——lockHeld 残留时以盘上 pid 复核", { timeout: 5000 }, (t) => {
+  const dir = makeRoot(t);
+  const lockPath = join(dir, "lock");
+  const store = createStore({ storageRoot: dir, log: silent });
+  store.acquireLock();
+  // 模拟「被陈旧接管」：内存 lockHeld 仍为 true，但盘上锁已归他人
+  writeFileSync(lockPath, JSON.stringify({ pid: 888888, at: Date.now() }), "utf8");
+  // 旧实现会在这里直接 return（以为还持有）→ 调用方误判自己是写者
+  // 新实现：以盘上 pid 复核，发现归属已易主 → 走真正抢锁流程
+  const stale = new Date(Date.now() - 6 * 60 * 1000);
+  utimesSync(lockPath, stale, stale);
+  store.acquireLock();
+  assert.match(readFileSync(lockPath, "utf8"), new RegExp(`"pid":${process.pid}`));
+  // 接管后能正常写
+  assert.equal(store.append(record(new Date(2026, 9, 2, 10, 0).getTime())), true);
+  store.close();
+});
+
+test("store: close 归属不可确认时不删锁（不给他人开闸）", { timeout: 5000 }, (t) => {
+  const dir = makeRoot(t);
+  const lockPath = join(dir, "lock");
+  const log = captureLog();
+  const store = createStore({ storageRoot: dir, log });
+  store.acquireLock();
+  // 锁文件内容损坏（他人正在创建的半成品）：归属不可确认
+  writeFileSync(lockPath, "{半截", "utf8");
+  store.close();
+  assert.equal(existsSync(lockPath), true, "归属不可确认时不应删锁");
+  assert.ok(log.calls.warn.some((m) => /归属不可确认/.test(m)));
+});
+
+test("store: 幽灵写者防线——锁被接管后 writeBackfillMarker 也拒绝", { timeout: 5000 }, (t) => {
+  const dir = makeRoot(t);
+  const lockPath = join(dir, "lock");
+  const store = createStore({ storageRoot: dir, log: silent });
+  store.acquireLock();
+  store.writeBackfillMarker({ done: ["sid-1"] }); // 持锁时可写
+  writeFileSync(lockPath, JSON.stringify({ pid: 888888, at: Date.now() }), "utf8");
+  // 锁被接管：写 marker 必须抛 LOCK_LOST，否则会抹掉新持有者的 done/水位
+  assert.throws(() => store.writeBackfillMarker({ done: [] }), (err) => err?.code === "LOCK_LOST");
+  // 盘上仍是原内容，未被覆盖
+  assert.deepEqual(store.readBackfillMarker().done, ["sid-1"]);
+});
+
 test("store: writeDaily 原子写读回一致；listDailyDates 排序且过滤 tmp；坏缓存按 null 降级", { timeout: 5000 }, (t) => {
   const dir = makeRoot(t);
   const log = captureLog();
@@ -150,6 +221,7 @@ test("store: hasAnyRecords 与回填游标读写", { timeout: 5000 }, (t) => {
   assert.deepEqual(store.readAllRecords(), []); // 无记录读=空数组，不炸
   assert.equal(store.readBackfillMarker(), null);
 
+  store.acquireLock(); // 写路径要求持锁
   store.append(record(new Date(2026, 9, 3, 9, 0).getTime()));
   assert.equal(store.hasAnyRecords(), true);
   // v2 形状：read 给缺省 watermarks 补空对象；round-trip 保留 done 与 watermarks
@@ -161,11 +233,12 @@ test("store: hasAnyRecords 与回填游标读写", { timeout: 5000 }, (t) => {
 
 test("store: 写失败纪律——首条 warn 丢弃，连续第 10 条升 error，之后不再升级", { timeout: 5000 }, (t) => {
   const dir = makeRoot(t);
-  // storageRoot 落在普通文件之下：mkdir 必失败，构造稳定的写失败路径
-  const blocker = join(dir, "not-a-dir");
-  writeFileSync(blocker, "x");
   const log = captureLog();
-  const store = createStore({ storageRoot: join(blocker, "usage"), log });
+  const store = createStore({ storageRoot: dir, log });
+  store.acquireLock();
+  // 让目标月的流水文件被占成目录：appendFileSync 必报 EISDIR —— 稳定的写失败路径
+  // （storageRoot 整体不可写的话连锁都拿不到，测不到「持锁但写盘失败」这条路径）
+  mkdirSync(join(dir, "records-2020-01.jsonl"));
 
   for (let i = 0; i < 9; i += 1) store.append(record(new Date(2020, 0, 1).getTime()));
   assert.equal(log.calls.warn.length, 1); // 只有首条 warn，不刷屏
@@ -178,4 +251,14 @@ test("store: 写失败纪律——首条 warn 丢弃，连续第 10 条升 error
   store.append(record(new Date(2020, 0, 1).getTime())); // 第 11 条：仍失败但不重复升级
   assert.equal(log.calls.error.length, 1);
   assert.equal(log.calls.warn.length, 1);
+});
+
+test("store: 写失败纪律按「真实写盘失败」计——未持锁不算写盘失败", { timeout: 5000 }, (t) => {
+  const dir = makeRoot(t);
+  const log = captureLog();
+  const store = createStore({ storageRoot: dir, log });
+  // 未持锁：append 因归属校验失败被拒（error 级，锁易主语义），不是写盘失败（warn 级）
+  store.append(record(new Date(2020, 0, 1).getTime()));
+  assert.equal(log.calls.warn.length, 0);
+  assert.equal(log.calls.error.length, 1);
 });

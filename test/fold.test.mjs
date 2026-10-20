@@ -85,6 +85,25 @@ test("fold④ 无 usage 的 message 跳过", { timeout: 5000 }, () => {
   assert.deepEqual(state.totals, ZERO);
 });
 
+test("fold④-b 顶层 usage=null 视为缺省，回落 stream 末块 usage（否则整条漏计）", { timeout: 5000 }, () => {
+  const state = createFoldState();
+  // 构造：顶层 usage = null，但 stream 里带 usage 块（message 事件同样携带 stream）
+  const event = {
+    type: "assistant/message",
+    data: {
+      turn: 1,
+      step: 1,
+      message: { source: { provider: "deepseek", model: "deepseek-chat" } },
+      usage: null,
+      stream: [{ type: "chunk", chunk: { type: "usage", usage: makeUsage({ inputTokens: 5, outputTokens: 2 }) } }],
+    },
+  };
+  const r = applyEvent(state, event);
+  assert.equal(r.changed, true, "usage=null 应回落 stream 采样，而不是整条丢弃");
+  assert.equal(r.kind, "add");
+  assert.deepEqual(state.totals, { uncachedInputTokens: 5, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 });
+});
+
 test("fold⑤ attempt stream 采样：乱序取 usage 块、从后往前、无 usage 无变化", { timeout: 5000 }, () => {
   const state = createFoldState();
   // usage 块夹在两条 text-delta 中间也能取到
