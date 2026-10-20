@@ -104,21 +104,38 @@ loader 行 id 与 client 模块 id **不共用**：`cordis.patch.yml` 的 `id` �
 
 ## 安装
 
+### 方式一：界面里输入 GitHub 链接（推荐）
+
+打开 DSH 的**插件**页 → 右上角 **添加插件** → 选「安装第三方插件」→ 在输入框粘贴仓库地址：
+
+```
+https://github.com/bluechonk/dsh-usage-stats.git
+```
+
+确认后宿主会自行完成：拉取仓库、装进 profile、把本插件登记为 bundle 并加载它的 loader 声明，装完可点「立即启用」。**无需手动改任何配置文件。**
+
+### 方式二：命令行
+
+```bash
+dsh plugin --profile desktop add github:bluechonk/dsh-usage-stats
+```
+
+`plugin` 子命令在 `--profile` **之后**（顺序反了会被当成 web 服务器参数）。桌面端 profile 由 Electron 独占，命令行不可用，请走方式一。
+
+### 方式三：本地目录（开发用）
+
 ```bash
 # 一、注册到 profile（Windows：junction；macOS / Linux：ln -s）
 mkdir -p ~/.dsh/profiles/desktop/node_modules/@bluechonk
 ln -s <本目录绝对路径> ~/.dsh/profiles/desktop/node_modules/@bluechonk/dsh-usage-stats
 
-# 二、在 profile 的 cordis.patch.yml 追加
-#    - insert:
-#        - id: dsh-usage-stats
-#          name: "@bluechonk/dsh-usage-stats"
-#          config: {}
+# 二、在 profile 的 package.json 的 dsh.profile.bundles 里加上本包名
+#    "@bluechonk/dsh-usage-stats"
 
 # 三、重启该 profile 的 DSH 实例，刷新页面
 ```
 
-client 半在页面加载时注入，改 `lib/client.js` 后**刷新页面**即可生效；host 半（`lib/index.js`）改动需**重启 DSH**（Electron 独占管理 profile，无法热重载）。
+开发期改 `lib/client.js` **刷新页面**即可生效；改 `lib/index.js`（host 半）需**重启 DSH**（Electron 独占管理 profile，无法热重载）。
 
 ## 配置
 

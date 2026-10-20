@@ -104,21 +104,38 @@ The folding semantics match the official `@deepseek-ai/dsh-token-meter` `tokenUs
 
 ## Installation
 
+### Option 1: paste the GitHub link in the UI (recommended)
+
+Open DSH's **Plugins** page → **Add plugin** → "Install a third-party plugin" → paste the repository address:
+
+```
+https://github.com/bluechonk/dsh-usage-stats.git
+```
+
+The Host then does the rest on its own: it fetches the repository, installs it into the profile, registers the plugin as a bundle, and loads the bundle's loader declaration. **No configuration file needs editing.** When it finishes, choose **Enable now**.
+
+### Option 2: command line
+
+```bash
+dsh plugin --profile desktop add github:bluechonk/dsh-usage-stats
+```
+
+The `plugin` subcommand comes **after** `--profile` (the other order is read as web server arguments). The desktop profile is managed exclusively by the Electron application, so the command line cannot reach it — use option 1 there.
+
+### Option 3: local directory (for development)
+
 ```bash
 # 1. Register into a profile (Windows: junction; macOS / Linux: ln -s)
 mkdir -p ~/.dsh/profiles/desktop/node_modules/@bluechonk
 ln -s <absolute path to this directory> ~/.dsh/profiles/desktop/node_modules/@bluechonk/dsh-usage-stats
 
-# 2. Append to the profile's cordis.patch.yml
-#    - insert:
-#        - id: dsh-usage-stats
-#          name: "@bluechonk/dsh-usage-stats"
-#          config: {}
+# 2. Add the package name to dsh.profile.bundles in the profile's package.json
+#    "@bluechonk/dsh-usage-stats"
 
 # 3. Restart that profile's DSH instance and refresh the page
 ```
 
-The client half is injected while the page loads, so editing `lib/client.js` takes effect on **refresh**; changes to the host half (`lib/index.js`) need a **DSH restart** (Electron exclusively manages the profile and cannot hot-reload it).
+While developing, editing `lib/client.js` takes effect on **refresh**; changes to the host half (`lib/index.js`) need a **DSH restart** (Electron exclusively manages the profile and cannot hot-reload it).
 
 ## Configuration
 
