@@ -6,6 +6,7 @@
 // 沙箱纪律：不碰任何生产文件，物化缺什么桩就补什么桩，client.js 一行不改。
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // —— 最小 React 桩：只按 client.js 实际摸到的面给（Component/五个 hook/createElement）——
 class StubComponent {}
@@ -574,10 +575,10 @@ test("tipPlacementOf：锚点右侧优先、右侧放不下翻到左侧、两轴
   }
 });
 
-test("tipRowsOf：0/负/缺值模型行不进卡片；值走千分位；非数组输入空表", { timeout: 5000 }, () => {
+test("tipRowsOf：0/负/缺值模型行不进卡片；值走万/亿简写；非数组输入空表", { timeout: 5000 }, () => {
   const rows = [{ key: "a", color: "c1" }, { key: "b", color: "c2" }, { key: "c", color: "c3" }];
   const out = P.tipRowsOf({ byModel: { a: 1234567, b: 0, c: -9 } }, rows);
-  assert.deepEqual(out, [{ key: "a", color: "c1", value: "1,234,567" }]);
+  assert.deepEqual(out, [{ key: "a", color: "c1", value: "123.5万" }]);
   assert.deepEqual(P.tipRowsOf(null, rows), []);
   assert.deepEqual(P.tipRowsOf({ byModel: { a: 1 } }, null), []);
   assert.deepEqual(P.tipRowsOf({ byModel: { a: 5 } }, [{ key: "z", color: "c" }]), []); // 键不存在
@@ -594,9 +595,10 @@ test("pctTextOf：≥10% 取整、<10% 一位小数、零值/无效一律 0%", {
   assert.equal(P.pctTextOf(NaN, 10), "0%");
 });
 
-test("donutTipTextOf：精确 token + 占比一行", { timeout: 5000 }, () => {
-  assert.equal(P.donutTipTextOf({ key: "x", tokens: 1234 }, 2000), "1,234 Token · 62%"); // 61.7% ≥10 → 取整
+test("donutTipTextOf：token 简写 + 占比一行", { timeout: 5000 }, () => {
+  assert.equal(P.donutTipTextOf({ key: "x", tokens: 1234 }, 2000), "1234 Token · 62%"); // 61.7% ≥10 → 取整
   assert.equal(P.donutTipTextOf({ key: "x", tokens: 114 }, 10000), "114 Token · 1.1%");
+  assert.equal(P.donutTipTextOf({ key: "x", tokens: 410000000 }, 1000000000), "4.1亿 Token · 41%");
   assert.equal(P.donutTipTextOf({ tokens: -5 }, 100), "0 Token · 0%");
   assert.equal(P.donutTipTextOf(null, 100), "0 Token · 0%");
 });
@@ -716,6 +718,26 @@ test("热力图 tooltip 用万/亿简写而非完整千分位", { timeout: 5000 
   assert.ok(titles.length > 0, "当天应有 tooltip");
   assert.ok(titles[0].includes("1.2亿 tokens"), "tooltip 应为万/亿简写，实际：" + titles[0]);
   assert.ok(!titles[0].includes("120,000,000"), "tooltip 不应再显示完整千分位：" + titles[0]);
+});
+
+test("趋势图图例纯展示：不可点击隐藏，全部模型恒列出", { timeout: 5000 }, () => {
+  assert.ok(!clientSrc.includes("hiddenKeys"), "不应再有「图例点掉模型」的状态");
+  assert.ok(!clientSrc.includes("dus-legendBtn"), "不应再有可点击图例的样式类");
+  assert.ok(!clientSrc.includes("toggleKey"), "不应再有图例切换逻辑");
+  assert.ok(clientSrc.includes("dus-legendItem"), "应有纯展示图例的样式类");
+  // 图例容器用 span 而非 button：不可聚焦、不可点击
+  const legendBlock = clientSrc.slice(clientSrc.indexOf('className: "dus-legend"'), clientSrc.indexOf('className: "dus-legend"') + 400);
+  assert.ok(legendBlock.includes('el("span"'), "图例项应渲染为 span（不可点击）");
+  assert.ok(!legendBlock.includes('el("button"'), "图例项不应是 button");
+});
+
+test("client 模块 id 必须与包名逐字一致（否则宿主拒绝加载整个插件）", { timeout: 5000 }, () => {
+  // 宿主按包名注册 factory：id 不符会报
+  // 「loaded without registering … via __ModuleLoader__.load」并让插件整体加载失败。
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const m = clientSrc.match(/__ModuleLoader__\.load\(\{[\s\S]{0,300}?id:\s*"([^"]+)"/);
+  assert.ok(m !== null, "未找到 __ModuleLoader__.load 的 id");
+  assert.equal(m[1], pkg.name, "client 模块 id 必须与 package.json 的 name 一致");
 });
 //#endregion
 
