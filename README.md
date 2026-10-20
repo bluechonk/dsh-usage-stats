@@ -179,18 +179,26 @@ git clone https://github.com/bluechonk/dsh-usage-stats.git
 
 ```bash
 npm run check        # 语法检查
-npm test             # 单元测试（129 个用例）
+npm test             # 单元测试（146 个用例）
 npm run verify:e2e   # 端到端：用本机会话日志跑一遍回填，校验四条 API 的响应形状
+npm run verify:ui    # 真机 UI 冒烟：驱动真实浏览器打开设置页，断言面板完整渲染且无控制台错误
 ```
 
 `verify:e2e` 只读 `~/.dsh/sessions`，统计落盘到临时目录并在结束时自动清理，不污染 `~/.dsh/usage-stats/`。
 
+`verify:ui` 需要一个正在运行的 DSH 实例 URL（形如 `http://127.0.0.1:3080/?token=...`，启动日志里会打印）与一个 Chrome 路径：
+
+```bash
+node docs/smoke-ui.mjs "http://127.0.0.1:3080/?token=xxx" "C:/path/to/chrome.exe" .tmp
+```
+
 相关文档：
 
 - [SPEC.md](SPEC.md)——技术规格：事件形状、折叠语义、锁与落盘纪律、接口契约、UI 细则
-- [docs/audit-report.md](docs/audit-report.md)——代码审核报告与修复记录
+- [docs/audit-report.md](docs/audit-report.md)——三轮代码审核的结论与修复记录
 - [docs/dsh-client-runtime-capabilities.md](docs/dsh-client-runtime-capabilities.md)——DSH 客户端插件运行时能力调研（slots API、CSS 变量、模块表）
 - [docs/e2e-verify.mjs](docs/e2e-verify.mjs)——端到端验证脚本
+- [docs/smoke-ui.mjs](docs/smoke-ui.mjs)——真机 UI 冒烟脚本
 
 ## 已知限制
 
@@ -199,6 +207,7 @@ npm run verify:e2e   # 端到端：用本机会话日志跑一遍回填，校验
 - 趋势折线悬停卡片最多列 8 个模型行，超出注「另有 N 个模型未列出」。
 - 缓存命中率只统计缓存命中与未缓存输入，不含输出与推理。
 - 插件在会话中途启用时，该会话启用前的用量不会被回填（宁漏勿双计）。
+- 落盘失败造成的 seq 空洞会被推导水位跨过，该笔净增量不再补齐（仅在连续多事件写盘失败时触发）。
 - 完整清单见 [SPEC.md §9](SPEC.md)。
 
 ## 致谢
