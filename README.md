@@ -1,9 +1,5 @@
 # dsh-usage-stats
 
-[![CI](https://github.com/bluechonk/dsh-usage-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/bluechonk/dsh-usage-stats/actions/workflows/ci.yml)
-[![version](https://img.shields.io/github/v/tag/bluechonk/dsh-usage-stats?label=version)](https://github.com/bluechonk/dsh-usage-stats/tags)
-[![license](https://img.shields.io/github/license/bluechonk/dsh-usage-stats?label=license)](https://github.com/bluechonk/dsh-usage-stats/blob/main/LICENSE)
-
 [中文](README.md) | [English](README_EN.md)
 
 DeepSeek Harness 插件：在设置页新增「使用统计」分区，用**六格摘要条**、**GitHub 式 Token 活动热力图**、**按模型趋势折线**、**模型用量环形图**呈现本机 Token 用量。数据全部来自本机会话日志，零上传、零运行时依赖。

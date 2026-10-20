@@ -1,9 +1,5 @@
 # dsh-usage-stats
 
-[![CI](https://github.com/bluechonk/dsh-usage-stats/actions/workflows/ci.yml/badge.svg)](https://github.com/bluechonk/dsh-usage-stats/actions/workflows/ci.yml)
-[![version](https://img.shields.io/github/v/tag/bluechonk/dsh-usage-stats?label=version)](https://github.com/bluechonk/dsh-usage-stats/tags)
-[![license](https://img.shields.io/github/license/bluechonk/dsh-usage-stats?label=license)](https://github.com/bluechonk/dsh-usage-stats/blob/main/LICENSE)
-
 [中文](README.md) | English
 
 DeepSeek Harness plugin: adds a **Usage Stats** section to the settings page, showing local token usage through a **six-cell summary strip**, a **GitHub-style token activity heatmap**, a **per-model trend chart**, and a **model usage donut**. All data comes from local session logs — nothing is uploaded, and there are no runtime dependencies.
