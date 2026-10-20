@@ -728,6 +728,18 @@ test("趋势图图例纯展示：不可点击隐藏，全部模型恒列出", { 
   assert.ok(!legendBlock.includes('el("button"'), "图例项不应是 button");
 });
 
+test("判废的 seq 登记必须在 await 之前（否则慢响应会覆盖快响应的 seq）", { timeout: 5000 }, () => {
+  // 竞态：拍 A（seq 小）慢、拍 B（seq 大）快。若 seq 在响应回来后才登记，
+  // A 后完成时会把 keySeqRef 覆盖成旧值，令过期响应被误判为「这一路最新」而落地。
+  const registerIdx = clientSrc.indexOf("keySeqRef.current[job[0]] = seq;");
+  assert.ok(registerIdx > 0, "未找到 keySeqRef 登记点");
+  const awaitIdx = clientSrc.indexOf("await Promise.allSettled(jobs.map");
+  assert.ok(awaitIdx > 0, "未找到 allSettled 调用");
+  assert.ok(registerIdx < awaitIdx, "seq 登记必须早于 await，否则慢响应会覆盖快响应的 seq");
+  // 且只许递增（并发拍下后发者 seq 更大，不能被先发者反向覆盖）
+  assert.ok(clientSrc.includes("seq > prev"), "seq 登记必须只增不减");
+});
+
 test("client 模块 id 必须与包名逐字一致（否则宿主拒绝加载整个插件）", { timeout: 5000 }, () => {
   // 宿主按包名注册 factory：id 不符会报
   // 「loaded without registering … via __ModuleLoader__.load」并让插件整体加载失败。
