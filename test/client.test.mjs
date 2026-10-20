@@ -43,12 +43,13 @@ const PURE_KEYS = [
   "dateKey", "parseDateKey", "addDays", "fmtDayCn", "fmtFullDayCn",
   "hmLevel", "hmColumnsOf", "hmMonthLabelsOf", "hmRenderOf",
   "monotonePath", "paletteVar", "modelValueOf", "trendModelRowsOf",
+  "trendScaleOf", "trendYNorm",
   "donutRowsOf", "donutArcPath", "validOf",
   // v0.2.0 增量（SPEC §6）
   "phaseAfterTick", "summaryCellsOf", "tipPlacementOf", "tipRowsOf",
   "pctTextOf", "donutTipTextOf", "needHeatmapRefreshOf", "cursorStepOf", "backfillUiOf",
 ];
-test("__pure 导出面快照（29 个纯函数、冻结）", { timeout: 5000 }, () => {
+test("__pure 导出面快照（31 个纯函数、冻结）", { timeout: 5000 }, () => {
   assert.deepEqual(Object.keys(P).sort(), [...PURE_KEYS].sort());
   assert.ok(Object.isFrozen(P));
 });
@@ -453,6 +454,43 @@ test("trendModelRowsOf：跨点并集、按总量降序、零/负总量滤除；
   assert.deepEqual(P.trendModelRowsOf([]), []);
   assert.deepEqual(P.trendModelRowsOf(null), []);
   assert.deepEqual(P.trendModelRowsOf([{ byModel: { "m/z": -5 } }]), []);
+});
+
+test("trendScaleOf：量级接近用线性轴，量级悬殊自动改对数轴", { timeout: 5000 }, () => {
+  // 量级接近（1:5）→ 线性，刻度是峰值的四等分
+  const lin = P.trendScaleOf(1000, 200);
+  assert.equal(lin.log, false, "量级接近时保持线性轴（线性更好读）");
+  assert.deepEqual(lin.ticks, [250, 500, 750, 1000]);
+  // 量级悬殊（8200 倍）→ 对数
+  const log = P.trendScaleOf(2.75e9, 3.35e5);
+  assert.equal(log.log, true, "量级悬殊时必须改对数轴，否则小模型贴在 0 轴上看不见");
+  assert.ok(log.ticks.length >= 2, "对数轴应有刻度");
+  assert.ok(log.ticks.every((t) => t > 0 && t <= 2.75e9), "刻度须落在 (0, 峰值] 内");
+  for (let i = 1; i < log.ticks.length; i += 1) {
+    assert.ok(log.ticks[i] > log.ticks[i - 1], "刻度须递增");
+  }
+  // 边界：无有效小值时用线性（不误判为对数）
+  assert.equal(P.trendScaleOf(1000, 0).log, false, "无小值时保持线性");
+  assert.equal(P.trendScaleOf(0, 0).log, false, "全零时保持线性");
+  // 刻度数封顶：240px 高的图放十几档会挤成一团
+  assert.ok(log.ticks.length <= 5, `刻度数须封顶 5（实际 ${log.ticks.length}）`);
+  assert.ok(P.trendScaleOf(1e12, 1).ticks.length <= 5, "极端量级下刻度也不得超上限");
+});
+
+test("trendYNorm：线性下小值贴底，对数下小值仍有可见高度", { timeout: 5000 }, () => {
+  // 线性：33.5 万 / 27.5 亿 = 0.12% —— 这正是主人反馈的「小模型看不见」
+  assert.ok(P.trendYNorm(3.35e5, 2.75e9, 0, false) < 0.002, "线性轴下小模型确实贴底");
+  // 对数：同样数值必须有可观高度
+  const log = P.trendScaleOf(2.75e9, 3.35e5);
+  const h = P.trendYNorm(3.35e5, 2.75e9, log.s, log.log);
+  assert.ok(h > 0.05, `对数轴下小模型应有可见高度（实际 ${h}）`);
+  // 峰值恒为 1，零值为 0
+  assert.equal(P.trendYNorm(2.75e9, 2.75e9, log.s, log.log), 1);
+  assert.equal(P.trendYNorm(0, 2.75e9, log.s, log.log), 0);
+  assert.equal(P.trendYNorm(1000, 1000, 0, false), 1);
+  assert.equal(P.trendYNorm(0, 1000, 0, false), 0);
+  // 归一化恒在 [0,1]
+  assert.ok(P.trendYNorm(1e12, 2.75e9, log.s, log.log) <= 1, "超峰值也不得越界");
 });
 //#endregion
 
