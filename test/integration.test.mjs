@@ -934,3 +934,85 @@ test31("status 是 GET——POST 打它 405；GET 返回逐字段SPEC形状", as
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test31("重启后同一轮不重复计轮——daily 的 seenTurns 从当日 records 复原", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dus-turns-"));
+  try {
+    const storageRoot = join(root, "stats");
+    const sessionsRoot = join(root, "sessions");
+    const ws = "--ws--";
+    const sid = "sess-turns-1";
+    // 热力图只回看 366 天：事件必须落在窗口内，否则该日不在 heatmap 结果里
+    const T = new Date(2026, 9, 10, 10, 0, 0).getTime(); // 2026-10-10 本地
+    writeSessionFile(sessionsRoot, ws, sid, [
+      { type: "session", version: 4, id: "x", createdAt: T },
+      msgEvent(sid, 1, 1, 100, T),
+    ]);
+
+    // 第一轮：装载 + 回填，turns 应为 1
+    const ctx1 = makeRouteCaptureCtx();
+    apply(ctx1, { storageRoot, sessionsRoot });
+    await sleep(120);
+    const heatmap1 = ctx1.routes.find((r) => r.path.endsWith("/heatmap"));
+    const h1 = JSON.parse((await callRoute(heatmap1, "GET", "/api/dsh-usage-stats/heatmap?days=366")).body);
+    const day1 = h1.days.find((d) => d.date === isoLocal(T));
+    assert.ok(day1 !== undefined, "热力图应含事件当天");
+    assert.equal(day1.turns, 1, "首轮：1 轮");
+    for (const dispose of ctx1.disposers) await dispose();
+
+    // 第二轮：同一会话同一轮再来一条（同 turn 不同 seq）——不应把 turns 加到 2
+    appendSessionEvents(sessionsRoot, ws, sid, [msgEvent(sid, 2, 1, 50, T + 1000)]);
+    const ctx2 = makeRouteCaptureCtx();
+    apply(ctx2, { storageRoot, sessionsRoot });
+    await sleep(120);
+    const heatmap2 = ctx2.routes.find((r) => r.path.endsWith("/heatmap"));
+    const h2 = JSON.parse((await callRoute(heatmap2, "GET", "/api/dsh-usage-stats/heatmap?days=366")).body);
+    const day2 = h2.days.find((d) => d.date === isoLocal(T));
+    assert.equal(day2.turns, 1, "重启后同一轮不重复计轮（seenTurns 已从 records 复原）");
+    for (const dispose of ctx2.disposers) await dispose();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test31("daily 内容陈旧时自愈重建（日期集一致但内容为空 → 不再永久报零）", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dus-stale-"));
+  try {
+    const storageRoot = join(root, "stats");
+    const sessionsRoot = join(root, "sessions");
+    const ws = "--ws--";
+    const sid = "sess-stale-1";
+    // 事件必须落在热力图回看窗口内（366 天），否则 summary 口径与断言不符
+    const T = new Date(2026, 9, 10, 10, 0, 0).getTime(); // 2026-10-10 本地
+    writeSessionFile(sessionsRoot, ws, sid, [
+      { type: "session", version: 4, id: "x", createdAt: T },
+      msgEvent(sid, 1, 1, 100, T),
+    ]);
+
+    // 第一轮：正常回填，records 与 daily 都有内容
+    const ctx1 = makeRouteCaptureCtx();
+    apply(ctx1, { storageRoot, sessionsRoot });
+    await sleep(120);
+    for (const dispose of ctx1.disposers) await dispose();
+
+    // 手工把 daily 档清空成「日期在、内容空」——模拟回填中途被杀（records 已写、daily 未落）
+    const dailyDir = join(storageRoot, "daily");
+    for (const name of readdirSync(dailyDir)) {
+      const p = join(dailyDir, name);
+      const daily = JSON.parse(readFileSync(p, "utf8"));
+      writeFileSync(p, JSON.stringify({ ...daily, byModel: {}, byHour: new Array(24).fill(0), sessions: {} }), "utf8");
+    }
+    assert.ok(recordsAll(storageRoot).length > 0, "records 真源在盘上");
+
+    // 第二轮：内容判据（samples 对账）应触发重建，summary 恢复真实用量
+    const ctx2 = makeRouteCaptureCtx();
+    apply(ctx2, { storageRoot, sessionsRoot });
+    await sleep(150);
+    const summary2 = ctx2.routes.find((r) => r.path.endsWith("/summary"));
+    const s = JSON.parse((await callRoute(summary2, "GET", "/api/dsh-usage-stats/summary")).body);
+    assert.ok(s.totalTokens > 0, `陈旧 daily 应被重建，summary 恢复真实用量（实际 ${s.totalTokens}）`);
+    for (const dispose of ctx2.disposers) await dispose();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

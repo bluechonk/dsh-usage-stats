@@ -40,7 +40,8 @@
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\"",
     "check": "node --check lib/client.js && node --check lib/index.js && node --check lib/fold.js && node --check lib/store.js && node --check lib/aggregate.js",
-    "verify:e2e": "node docs/e2e-verify.mjs"
+    "verify:e2e": "node docs/e2e-verify.mjs",
+    "verify:ui": "node docs/smoke-ui.mjs"
   },
   "keywords": [
     "deepseek-harness",
