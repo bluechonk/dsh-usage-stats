@@ -330,3 +330,18 @@ test("modelShares：超 6 模型不在此层截断——「其他模型」归并
   assert.equal(res.models.length, 8, "聚合层必须全量返回，截断/归并留给渲染层");
   assert.equal(res.models.every((m) => m.tokens > 0), true);
 });
+
+test("modelShares：days=0 = 全期口径——窗口外的历史用量也计入（模型用量环图恒用全期）", { timeout: 5000 }, () => {
+  const dailies = [
+    makeDaily("2026-09-20", [["deepseek", "deepseek-chat", 99999, 0, 0, 0]]), // 远早于窗口
+    makeDaily("2026-10-01", [["deepseek", "deepseek-chat", 80, 20, 0, 0]]), // 100
+    makeDaily("2026-10-03", [["deepseek", "deepseek-chat", 100, 100, 0, 0]]), // 200
+  ];
+  const all = modelShares(dailies, 0, "2026-10-03");
+  assert.equal(all.total, 99999 + 100 + 200);
+  assert.equal(all.models.length, 1);
+  assert.equal(all.models[0].tokens, 99999 + 100 + 200);
+  // 对照：days=7 只算窗口内
+  const win = modelShares(dailies, 7, "2026-10-03");
+  assert.equal(win.total, 300);
+});

@@ -92,11 +92,20 @@ record 一行形状（字段全名，不压缩，含会话内事件序号 `seq`�
 | `GET /api/dsh-usage-stats/summary` | — | `{since, totalTokens, peakDay:{date,tokens}|null, longestChatMs, currentStreakDays, longestStreakDays, cacheReadTokens, uncachedInputTokens, cacheHitRate}` |
 | `GET /api/dsh-usage-stats/heatmap` | `?days=N`（默认 366，0=全量） | `{days:[{date:"YYYY-MM-DD", tokens, turns}]}` 逐日全量；weekly/total 列聚合由 client 计算 |
 | `GET /api/dsh-usage-stats/trend` | `?days=1\|7\|30` | days=1 → `{granularity:"hour", points:[{label:"0时"…"23时", byModel:{key:tokens}, total}]}`；否则 `{granularity:"day", points:[{date, byModel, total}]}` |
-| `GET /api/dsh-usage-stats/models` | `?days=7\|30` | `{models:[{key, provider, model, tokens, share}], total}`，按 tokens 降序 |
+| `GET /api/dsh-usage-stats/models` | `?days=0\|7\|30`（默认 0=全期） | `{models:[{key, provider, model, tokens, share}], total}`，按 tokens 降序。模型用量环图恒用 `days=0` 全期口径，不随「近 7 日 / 近 30 日」变化 |
 | `GET /api/dsh-usage-stats/backfill/status` | — | `{running, startedAt, scanned, total, backfilled, records, lostFrames, finishedAt, error}` |
 | `POST /api/dsh-usage-stats/backfill` | — | 202 受理制：`{ok, started:true}` 即返，任务后台分片执行；并发触发返回 409 |
 
 摘要条口径：`totalTokens` 全期求和；`peakDay` 为单日四桶之和最大的一天；`longestChatMs` 按 `(sessionId, date)` 分桶取 `lastMs-firstMs` 的全期最大值（跨日会话按日截断，近似）；`currentStreakDays` 为「今天有用量=1，往回连续有用量天数」（今天没有则从昨天往回数），`longestStreakDays` 为历史最长；`cacheHitRate` 为缓存命中 Token ÷（缓存命中 + 未缓存输入）×100，无输入时为 `null`（前端显示「—」）。空数据返回 `totalTokens:0, peakDay:null, longestChatMs:0, streak:0, cacheHitRate:null, since:当天`。
+
+**口径分层（重要）**：页面上的三块数据口径各不相同，不可互相套用——
+
+| 数据 | 口径 | 受「时间范围」影响 |
+| --- | --- | --- |
+| 摘要条六格 | 全期 | 否 |
+| Token 活动热力图 | 最近 52 自然周 | 否 |
+| 每日 Token 趋势图 | 近 7 日 / 近 30 日 | **是** |
+| 模型用量环图 | **全期** | **否** |
 
 ## 6. 面板 UI 与交互
 
@@ -105,7 +114,7 @@ UI 描述以本节为准。面板挂在设置页 `settings.section`，`order: 13
 硬性要求：
 
 1. 样式全部 `dus-*` 前缀命名空间，零官方类名依赖；双主题跟随官方 theme。
-2. 六块 UI：**六格摘要条**（`repeat(auto-fit,minmax(132px,1fr))` 自适应折行，标签不截断；分隔线用「1px 列间隙 + 格子外扩阴影」画，折行后行首无孤线）/ **热力图**（52 自然周列、周日起、`repeat(52,minmax(0,1fr))` 等分无滚动、`ceil(v/max*4)` 五档、每日/每周/累计三档切换、每周/累计为列底对齐色块柱、无图例）/ **时间范围胶囊**（近 7 日/近 30 日，默认近 30 日；标题行文案「时间范围」）/ **趋势折线**（单调三次插值 Fritsch–Carlson：切线 = 3× 相邻段斜率限幅，遇重复横坐标 `dx<=0` 置 `s=0` 防 NaN；Y 域 `[0, 单模型单日峰值]`；Y 轴隐藏；X 刻度 ≤14 全标否则首尾每 5；tooltip 卡片「{月日} - {总量} tokens」+ 分模型行，8px 圆点 + 名称 + mono 数值 +「tokens」单位，0 用量行过滤）/ **模型环形图**（半径 rO=76 / rI=50.4、paddingAngle 2、中心总量、右侧图例色块 + 等宽名 + 百分比 + token 数、超 6 个归并「其他模型」）/ 右下刷新按钮。标题右侧带「应用用量」徽章。
+2. 六块 UI：**六格摘要条**（`repeat(auto-fit,minmax(132px,1fr))` 自适应折行，标签不截断；分隔线用「1px 列间隙 + 格子外扩阴影」画，折行后行首无孤线）/ **热力图**（52 自然周列、周日起、`repeat(52,minmax(0,1fr))` 等分无滚动、`ceil(v/max*4)` 五档、每日/每周/累计三档切换、每周/累计为列底对齐色块柱、无图例）/ **时间范围胶囊**（近 7 日/近 30 日，默认近 30 日；标题行文案「时间范围」；**只作用于趋势折线**，模型用量环图恒为全期、不随此切换）/ **趋势折线**（单调三次插值 Fritsch–Carlson：切线 = 3× 相邻段斜率限幅，遇重复横坐标 `dx<=0` 置 `s=0` 防 NaN；Y 域 `[0, 单模型单日峰值]`；Y 轴隐藏；X 刻度 ≤14 全标否则首尾每 5；tooltip 卡片「{月日} - {总量} tokens」+ 分模型行，8px 圆点 + 名称 + mono 数值 +「tokens」单位，0 用量行过滤）/ **模型环形图**（半径 rO=76 / rI=50.4、paddingAngle 2、中心总量、右侧图例色块 + 等宽名 + 百分比 + token 数、超 6 个归并「其他模型」；标题右侧带「全部」口径标记，tooltip 第二行写「全部用量」）/ 右下刷新按钮。标题右侧带「应用用量」徽章。
 3. 三态：加载（骨架或文案）/ 空态 / 错误态（重试按钮）。单路 fetch 失败只降级对应卡片并给行内「重试」，不炸整面板；卡片级降级行只在该路本次失败时出现，「尚未到达」显示「加载中…」。
 4. 数字格式化：`≥1 万` 显示「x.x 万」、`≥1 亿` 显示「x.x 亿」（摘要条，万档四舍五入后 ≥10000 改走亿档）；图表 tooltip 用同一套万/亿简写（热力图悬停的 token 数同样简写，不用完整千分位）。
 5. 静默轮询：60 秒一拍，恒拉 summary 与当前 range 的 trend（非今日档再加 models），不闪「加载中」，后台标签页跳拍、切回前台补一拍、关页面即停。热力图按需刷新：当且仅当本拍 summary 的 `totalTokens` 或「今天」与上一拍不同时追加一次 heatmap；拉失败不推进判定基线（否则判定信号被消费、热力图静默冻结）。

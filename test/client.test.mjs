@@ -275,7 +275,7 @@ test("hmLevel：零值/坏 max=0 档，其余 ceil(v/max*4) 钳 [1,4]", { timeou
 //#region 环形图（donutRowsOf / donutArcPath）
 test("donutRowsOf：8 模型归并 6 行+「其他模型」，行额与 total 守恒=正额总和", { timeout: 5000 }, () => {
   const models8 = Array.from({ length: 8 }, (_, i) => ({ key: "m" + i, tokens: (i + 1) * 1000 }));
-  const out = P.donutRowsOf(null, { models: models8 }, 30);
+  const out = P.donutRowsOf({ models: models8 });
   assert.equal(out.rows.length, 7);
   assert.equal(out.rows[6].key, "其他模型");
   assert.equal(out.rows[6].color, "var(--dus-fgfaint)");
@@ -287,22 +287,19 @@ test("donutRowsOf：8 模型归并 6 行+「其他模型」，行额与 total �
 });
 
 test("donutRowsOf：全零/负输入 → 空 rows + total=0（负残值不进图）", { timeout: 5000 }, () => {
-  const out = P.donutRowsOf(null, { models: [{ key: "a", tokens: 0 }, { key: "b", tokens: -9 }] }, 7);
+  const out = P.donutRowsOf({ models: [{ key: "a", tokens: 0 }, { key: "b", tokens: -9 }] });
   assert.deepEqual(out, { rows: [], total: 0 });
 });
 
 test("donutRowsOf：坏形状（无 models 数组）显式返回 null，不静默当空数据", { timeout: 5000 }, () => {
-  assert.equal(P.donutRowsOf(null, {}, 7), null);
-  assert.equal(P.donutRowsOf(null, null, 7), null);
-  assert.equal(P.donutRowsOf(null, { models: "x" }, 7), null);
+  assert.equal(P.donutRowsOf({}), null);
+  assert.equal(P.donutRowsOf(null), null);
+  assert.equal(P.donutRowsOf({ models: "x" }), null);
 });
 
-test("donutRowsOf：range=1 走 trend.byModel 逐点求和，无视 models 响应", { timeout: 5000 }, () => {
-  const out = P.donutRowsOf(
-    { points: [{ byModel: { "x/a": 100, "x/b": 50 } }, { byModel: { "x/a": 30 } }] },
-    { models: [{ key: "WRONG", tokens: 99999 }] },
-    1,
-  );
+test("donutRowsOf：只读 models 响应——模型用量恒为全期口径，不按时间范围过滤", { timeout: 5000 }, () => {
+  // /models?days=0 返回的就是全量，client 不再按 range 二次过滤
+  const out = P.donutRowsOf({ models: [{ key: "x/a", tokens: 130 }, { key: "x/b", tokens: 50 }] });
   assert.deepEqual(out.rows.map((r) => [r.key, r.tokens]), [["x/a", 130], ["x/b", 50]]);
   assert.equal(out.total, 180);
 });
