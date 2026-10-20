@@ -1056,3 +1056,80 @@ test31("回填无增量时也落 mtime 哨兵（稳态不重复解压会话文�
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test31("API 契约：四条只读路由的响应形状逐字段断言（SPEC §5）", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dus-contract-"));
+  try {
+    const storageRoot = join(root, "stats");
+    const sessionsRoot = join(root, "sessions");
+    const ws = "--ws--";
+    const sid = "sess-contract-1";
+    const T = new Date(2026, 9, 10, 10, 0, 0).getTime();
+    writeSessionFile(sessionsRoot, ws, sid, [
+      { type: "session", version: 4, id: "x", createdAt: T },
+      msgEvent(sid, 1, 1, 100, T),
+    ]);
+
+    const ctx = makeRouteCaptureCtx();
+    apply(ctx, { storageRoot, sessionsRoot });
+    await sleep(150);
+
+    const get = async (suffix, url) => {
+      const route = ctx.routes.find((r) => r.path.endsWith(suffix));
+      assert.ok(route, `路由未注册：${suffix}`);
+      const res = await callRoute(route, "GET", url);
+      assert.equal(res.status, 200, `GET ${suffix} 应 200`);
+      return JSON.parse(res.body);
+    };
+
+    // summary：逐字段（SPEC §5）
+    const summary = await get("/summary", "/api/dsh-usage-stats/summary");
+    for (const key of ["since", "totalTokens", "peakDay", "longestChatMs", "currentStreakDays", "longestStreakDays", "cacheReadTokens", "uncachedInputTokens", "cacheHitRate"]) {
+      assert.ok(key in summary, `summary 形状缺 ${key}`);
+    }
+    assert.equal(typeof summary.since, "string");
+    assert.equal(typeof summary.totalTokens, "number");
+    assert.ok(summary.peakDay === null || (typeof summary.peakDay.date === "string" && typeof summary.peakDay.tokens === "number"));
+    assert.equal(typeof summary.longestChatMs, "number");
+    assert.equal(typeof summary.currentStreakDays, "number");
+    assert.equal(typeof summary.longestStreakDays, "number");
+    assert.ok(summary.cacheHitRate === null || typeof summary.cacheHitRate === "number");
+
+    // heatmap：days 数组 + 逐项字段
+    const heatmap = await get("/heatmap", "/api/dsh-usage-stats/heatmap?days=366");
+    assert.ok(Array.isArray(heatmap.days), "heatmap.days 必须是数组");
+    for (const day of heatmap.days) {
+      assert.equal(typeof day.date, "string");
+      assert.equal(typeof day.tokens, "number");
+      assert.equal(typeof day.turns, "number");
+    }
+
+    // trend：granularity + points 逐项字段
+    const trend = await get("/trend", "/api/dsh-usage-stats/trend?days=30");
+    assert.ok(trend.granularity === "day" || trend.granularity === "hour", "trend.granularity 取值非法");
+    assert.ok(Array.isArray(trend.points), "trend.points 必须是数组");
+    for (const point of trend.points) {
+      assert.equal(typeof point.total, "number");
+      assert.equal(typeof point.byModel, "object");
+    }
+
+    // models：models 逐项字段 + total
+    const models = await get("/models", "/api/dsh-usage-stats/models?days=0");
+    assert.ok(Array.isArray(models.models), "models.models 必须是数组");
+    assert.equal(typeof models.total, "number");
+    for (const m of models.models) {
+      assert.equal(typeof m.key, "string");
+      assert.equal(typeof m.provider, "string");
+      assert.equal(typeof m.model, "string");
+      assert.equal(typeof m.tokens, "number");
+      assert.equal(typeof m.share, "number");
+      assert.ok(m.share >= 0 && m.share <= 1, `share 应在 0-1，实际 ${m.share}`);
+    }
+    // 环图总量必须等于摘要条累计（全期口径一致）
+    assert.equal(models.total, summary.totalTokens, "模型用量全期总量必须等于摘要条累计（口径一致）");
+
+    for (const dispose of ctx.disposers) await dispose();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
