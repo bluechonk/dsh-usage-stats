@@ -39,6 +39,7 @@ const P = captured.__pure;
 
 // —— 断言 __pure 的实际导出面（防导出漂移：多导/少导/解冻都算变化）——
 const PURE_KEYS = [
+  "localeDict", "localeNs", "interpolate", "fallbackT",
   "fmtCompact", "fmtFull", "fmtDuration", "fmtStreak",
   "dateKey", "parseDateKey", "addDays", "fmtDayCn", "fmtFullDayCn",
   "hmLevel", "hmColumnsOf", "hmMonthLabelsOf", "hmRenderOf",
@@ -49,7 +50,7 @@ const PURE_KEYS = [
   "phaseAfterTick", "summaryCellsOf", "tipPlacementOf", "tipRowsOf",
   "pctTextOf", "donutTipTextOf", "needHeatmapRefreshOf", "cursorStepOf", "backfillUiOf",
 ];
-test("__pure 导出面快照（31 个纯函数、冻结）", { timeout: 5000 }, () => {
+test("__pure 导出面快照（35 个纯函数、冻结）", { timeout: 5000 }, () => {
   assert.deepEqual(Object.keys(P).sort(), [...PURE_KEYS].sort());
   assert.ok(Object.isFrozen(P));
 });
@@ -706,20 +707,27 @@ const clientSrc = await (await import("node:fs/promises")).readFile(
   new URL("../lib/client.js", import.meta.url), "utf8");
 
 test("面板头部带「应用用量」徽章", { timeout: 5000 }, () => {
-  assert.ok(clientSrc.includes('"应用用量"'), "标题旁缺少「应用用量」徽章文案");
+  // 文案在字典里（localeDict），断言查字典而非源码字面量——文案搬家不会误伤
+  assert.equal(P.localeDict.zh.sectionBadge, "应用用量");
+  assert.equal(P.localeDict.en.sectionBadge, "App Usage");
   assert.ok(clientSrc.includes(".dus-badge"), "缺少 .dus-badge 样式");
   // 正常态与错误兜底态各有一处标题——两处都要带徽章，否则崩了就没徽章了
-  const badgeCount = clientSrc.split('"应用用量"').length - 1;
-  assert.equal(badgeCount, 2, "「应用用量」徽章应出现在正常态与错误兜底态两处标题");
+  const badgeUses = clientSrc.split('tr(t, "sectionBadge")').length - 1;
+  assert.equal(badgeUses, 2, "「应用用量」徽章应出现在正常态与错误兜底态两处标题");
 });
 
 test("时间范围只暴露「近 7 日 / 近 30 日」两档", { timeout: 5000 }, () => {
   const m = clientSrc.match(/const RANGE_MODES = \[([\s\S]*?)\];/);
   assert.ok(m !== null, "未找到 RANGE_MODES 定义");
-  const labels = [...m[1].matchAll(/label:\s*"([^"]+)"/g)].map((x) => x[1]);
-  assert.deepEqual(labels, ["近 7 日", "近 30 日"]);
+  const keys = [...m[1].matchAll(/key:\s*"([^"]+)"/g)].map((x) => x[1]);
+  assert.deepEqual(keys, ["rangeLast7", "rangeLast30"]);
+  // 档位文案在字典里（中英各一份）
+  assert.equal(P.localeDict.zh.rangeLast7, "近 7 日");
+  assert.equal(P.localeDict.zh.rangeLast30, "近 30 日");
+  assert.equal(P.localeDict.en.rangeLast7, "Last 7 Days");
+  assert.equal(P.localeDict.en.rangeLast30, "Last 30 Days");
   // 「今日」档已从 UI 移除，但底层 range=1 分支仍保留（trend 路由仍支持 days=1）
-  assert.ok(!m[1].includes("今日"), "RANGE_MODES 不应再含「今日」档");
+  assert.ok(!m[1].includes("today"), "RANGE_MODES 不应再含「今日」档");
 });
 
 test("范围标题与峰值标签逐字对齐设计稿", { timeout: 5000 }, () => {

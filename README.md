@@ -4,6 +4,8 @@
 [![version](https://img.shields.io/github/v/tag/bluechonk/dsh-usage-stats?label=version)](https://github.com/bluechonk/dsh-usage-stats/tags)
 [![license](https://img.shields.io/github/license/bluechonk/dsh-usage-stats?label=license)](https://github.com/bluechonk/dsh-usage-stats/blob/main/LICENSE)
 
+[中文](README.md) | [English](README_EN.md)
+
 DeepSeek Harness 插件：在设置页新增「使用统计」分区，用**六格摘要条**、**GitHub 式 Token 活动热力图**、**按模型趋势折线**、**模型用量环形图**呈现本机 Token 用量。数据全部来自本机会话日志，零上传、零运行时依赖。
 
 ![使用统计面板](docs/images/01-使用统计面板.png)
@@ -213,6 +215,15 @@ npm run verify:ui    # 真机 UI 冒烟：驱动真实浏览器打开设置页�
 
 - GitHub：<https://github.com/bluechonk/dsh-usage-stats>
 - 插件标识：npm 包名 `@bluechonk/dsh-usage-stats`，loader 行 id `dsh-usage-stats`。
+
+## 国际化
+
+界面文案**跟随宿主语言自动切换**（DSH 设置 → 通用设置 → 语言），无需刷新页面。
+
+- 走宿主的 `@deepseek-ai/dsh-client-locale`：注册 `dsh-usage-stats` 命名空间的中英字典，组件声明该命名空间后由宿主注入翻译函数；语言切换时组件自动重渲染。
+- 数值与日期格式一并本地化：中文用「万/亿、天/小时/分、月/日」，英文用「K/B、d/h/min、MM/DD」。
+- 宿主未提供语言服务时降级为中文并告警，不静默装死。
+- 英文版说明见 [README_EN.md](README_EN.md)。
 
 ## 致谢与许可
 
