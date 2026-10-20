@@ -87,7 +87,34 @@
 - **无 XSS 面**：全文件无 `innerHTML` / `dangerouslySetInnerHTML` / `document.write`；用户与服务端数据全部经 React 文本节点或 `title` 属性输出。
 - SVG 路径坐标不会出 NaN/Infinity。
 
-## 三、留给后续的已知问题
+## 三、第二轮审核（2026-10-20 晚）
+
+第一轮修完后又做了一轮，重点是「修过的有没有引入新问题」「测试到底有没有在测东西」「第一轮标为可忽略的到底该不该修」。
+
+### 3.1 修复的问题
+
+| # | 位置 | 问题 | 后果 | 修复 |
+| --- | --- | --- | --- | --- |
+| R1 | `aggregate.js` `modelShares` | `days=0`（全期）仍按当天封顶，而 `summarize` 不封顶 | 未来时间戳的记录（时钟漂移）被这里排除却被摘要条计入 → **环图总量 < 摘要条累计**（口径对不上，正是「模型用量」最该避免的事） | 全期口径两端都不设界 |
+| R2 | `aggregate.js` `rebuildDaily` | 归轮按 `time` 排序，增量路径按**到达顺序** | 「同一轮换模型续采」时轮数归属的模型在重建前后漂移，daily 对不上账 | 重建改按到达顺序（同一天的 records 必在同一月份文件内，行序即到达序） |
+| R3 | `client.js` 判废 | 每路 seq 的登记写在 `await Promise.allSettled` **之后** | 并发拍下慢响应后完成会覆盖快响应已登记的 seq → **过期响应被误判为「这一路最新」而落地**（数据回退） | 登记移到 await 之前，且只许递增 |
+| R4 | `index.js` 回填主路径 | 无增量时只 `done.add()`（局部集合），`markerDone` 未同步 | 该会话的 done 与 mtime 哨兵都不落盘 → **每轮回填都重复解压它** | 区分「无增量」与「增量全写盘失败」：前者写哨兵（稳态零解压），后者不写（避免固化故障窗） |
+| R5 | `test/` 覆盖盲区 | 四条只读路由的响应形状无逐字段守护 | 后端改字段名不会被发现（client 侧静默拿 undefined） | 新增 API 契约测试（字段名/类型/取值域 + 「环图总量 === 摘要条累计」） |
+| R6 | `test/` 回归防线 | 判废的 seq 登记顺序无守护 | R3 这类竞态可再次引入 | 新增源码级顺序断言（登记早于 await + 只增不减），已验证注入回归后会变红 |
+
+### 3.2 复查后确认无需改动的
+
+| 项 | 结论 |
+| --- | --- |
+| `fmtCompact` 的万/亿切换边界 | 1e8 恰好 → 「1 亿」；9999.95 万 → 「1 亿」；9999 → 「9999」；负数/NaN/Infinity → 「0」。已有测试逐值钉死 |
+| 内存增长 | `foldStates`/`inheritedStates`/`lastRoute` 有 `session/disposed` 清理；`dailyCache` 按天有界；`derivedWatermarks` 随索引重建。无明显泄漏 |
+| 原子写的 tmp 名 | 含 pid，跨进程/跨 store 实例不冲突；残片名不匹配 `DAILY_RE`/`RECORDS_RE`，不会被当正式档 |
+| `assertOwnership` 每次 append 读一次锁文件 | 同步小文件读，高频事件下开销可接受；安全优先，保留每次校验 |
+| live 侧缺 `event.time` 用 `Date.now()` 兜底、回填侧跳过 | 两侧不一致但**不会双计**（live 记过则水位已推、回填跳过；live 没记则两边都不记）。DSH 的 `session/event` 恒带 `time`，该分支实际不可达。改成回填也兜底会把历史记到今天，改成 live 也不记会丢真实用量——两边都不改 |
+| `test31` 自定义封装 | 只是把超时放宽到 10s（集成测试要解压会话文件），**不吞断言失败** |
+| `validOf` 的宽松校验 | 只校验关键字段存在是对的——不该因附加字段缺失就整块降级；字段名漂移由新增的 API 契约测试守护 |
+
+## 四、留给后续的已知问题
 
 以下问题经审核确认存在但**风险可控或改动面过大**，本次未修，已记入 [SPEC.md §9](../SPEC.md)：
 
@@ -105,8 +132,17 @@
 | --- | --- | --- |
 | `test/fold.test.mjs` | 10 | 折叠语义五类 + retry 清槽 + `usage:null` 回落 |
 | `test/store.test.mjs` | 14 | 落盘纪律、原子写、月轮转、锁互斥/陈旧接管/归属校验 |
-| `test/aggregate.test.mjs` | — | 聚合口径：streak、峰值、缓存命中率、`days=0` 全期 |
-| `test/client.test.mjs` | — | 纯函数直测面（29 个）+ 版式回归（徽章、范围档位、图例只读、单位、模块 id 一致性） |
-| `test/integration.test.mjs` | 22 | 端到端：回填不双计、锁易主降级、重启不重复计轮、daily 陈旧自愈 |
-| `test/contract.test.mjs` | — | 接口契约形状 |
-| 合计 | **129** | `npm test` |
+| `test/aggregate.test.mjs` | 25 | 聚合口径：streak、峰值、缓存命中率、`days=0` 全期、归轮顺序 |
+| `test/client.test.mjs` | 58 | 纯函数直测面（29 个）+ 版式回归 + 渲染冒烟 + 判废顺序 |
+| `test/integration.test.mjs` | 25 | 端到端：回填不双计、锁易主降级、重启不重复计轮、daily 陈旧自愈、mtime 哨兵、API 契约 |
+| `test/contract.test.mjs` | 8 | fold / zstd 帧 / fork 去重 / 配置解析的契约 |
+| 合计 | **138** | `npm test` |
+
+验证手段三层：
+
+| 层 | 命令 | 覆盖 |
+| --- | --- | --- |
+| 纯函数与契约 | `npm test` | 算术、布局、口径、接口形状 |
+| 端到端（真实会话文件） | `npm run verify:e2e` | 真实回填 → 四条 API 响应形状 |
+| 真机 UI（真实浏览器） | `npm run verify:ui` | 真实渲染路径：组件渲染、配色、按钮、控制台错误 |
+
