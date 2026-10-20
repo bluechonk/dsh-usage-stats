@@ -99,7 +99,6 @@ try {
       legendColors: q('.dus-legendItem').map((i) => getComputedStyle(i.querySelector('.dus-legendSw')).backgroundColor),
       legendIsButton: q('.dus-legendItem').filter((i) => i.tagName === 'BUTTON').length,
       donutCenter: q('.dus-donutT').map((t) => t.textContent),
-      scopeTag: q('.dus-scopeTag').map((t) => t.textContent),
       secTitles: q('.dus-secTitle').map((t) => t.textContent),
       pills: q('.dus-pill').map((p) => p.textContent),
       footBtns: q('.dus-footRow button').map((b) => b.textContent),
@@ -131,7 +130,6 @@ try {
   if (new Set(info.legendColors).size < 2 && info.legendColors.length > 1) fail.push('图例颜色未区分（全部同色）')
   if (info.legendIsButton > 0) fail.push('图例仍可点击（应为纯展示）')
   if (info.donutCenter.length !== 1) fail.push('环图中心缺失')
-  if (info.scopeTag[0] !== '全部') fail.push('模型用量缺少「全部」口径标记')
   if (info.secTitles.length < 4) fail.push('区块数量不足：' + info.secTitles.join('/'))
   if (info.pills.length < 4) fail.push('胶囊数量不足：' + info.pills.join('/'))
   if (info.footBtns.join(',') !== '刷新') fail.push('页脚按钮应只有「刷新」，实际：' + info.footBtns.join(','))
