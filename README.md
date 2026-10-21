@@ -229,6 +229,12 @@ npm run verify:ui    # 真机 UI 冒烟：驱动真实浏览器打开设置页�
 - GitHub：<https://github.com/bluechonk/dsh-usage-stats>
 - 插件标识：npm 包名 `@bluechonk/dsh-usage-stats`，loader 行 id `dsh-usage-stats`。
 
+## 版本
+
+**自用插件，走 `0.1.x` 迭代**：接口与数据结构尚未稳定，不做兼容性承诺；`0.2.0` 留给不兼容的界面改版。**不发布到 npm**，只经 GitHub 链接安装（`package.json` 标了 `private: true`）。
+
+版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## 国际化
 
 界面文案**跟随宿主语言自动切换**（DSH 设置 → 通用设置 → 语言），无需刷新页面。
