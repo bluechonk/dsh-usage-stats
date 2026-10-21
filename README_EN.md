@@ -230,6 +230,12 @@ See [docs/设计与验证.md](docs/设计与验证.md) for the design and verifi
 - GitHub: <https://github.com/bluechonk/dsh-usage-stats>
 - Plugin identity: npm package name `@bluechonk/dsh-usage-stats`, loader row id `dsh-usage-stats`.
 
+## Versioning
+
+**A self-use plugin, iterating on `0.1.x`**: the interfaces and data shapes are not settled yet, so no compatibility promise is made; `0.2.0` is reserved for an incompatible interface revision. It is **not published to npm** — installation goes through the GitHub link only (`package.json` is marked `private: true`).
+
+See [CHANGELOG.md](CHANGELOG.md) for the version history.
+
 ## Localization
 
 The panel copy **follows the host language automatically** (DSH Settings → General → Language); no page reload is needed.

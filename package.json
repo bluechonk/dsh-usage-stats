@@ -1,6 +1,7 @@
 {
   "name": "@bluechonk/dsh-usage-stats",
-  "version": "1.0.0",
+  "version": "0.1.1",
+  "private": true,
   "description": "DeepSeek Harness 插件：设置页「使用统计」看板——六格摘要条 + Token 活动热力图（每日/每周/累计）+ 按模型每日趋势折线 + 模型用量环形图。数据全部来自本机会话日志，零上传零运行时依赖。",
   "type": "module",
   "main": "lib/index.js",
