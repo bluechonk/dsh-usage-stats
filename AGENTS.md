@@ -69,9 +69,18 @@ node docs/verify-dsh-web.mjs stop                          # 停实例 + 删临�
 ## 代码与提交约定
 
 - 注释与文档用中文、无 emoji、LF（`.gitattributes` 已配 `* text=auto eol=lf`）。
-- 提交信息 `type(scope): 中文描述`，一次逻辑变更一个提交；先写 `.tmp/commit-msg.txt` 再 `git commit -F`。
+- 提交信息 `type(scope): 中文描述`；先写 `.tmp/commit-msg.txt` 再 `git commit -F`。
 - 不直推 `main`：改动落分支，经 PR 合并。
 - 临时脚本与中间产物放 `.tmp/`（已忽略）；可复用流程沉淀到 `docs/`。
+
+### 提交工作流（小步提交 + 合并前整理）
+
+1. **分支上小步提交**：开发时随手 `git commit`，允许 `wip: 尝试 xxx`、`tmp:` 这类中间提交，不追求一步到位。
+2. **合并前整理**：功能稳定后 `git rebase -i <base>`——压缩 wip、重排顺序、合并同主题提交，整理成少数几个语义清晰的提交。
+3. **推送前复查**：`git log --oneline <base>..HEAD` 逐个过一遍，确认每个提交都符合 `type(scope): 中文描述`，且 `npm run check` 通过（能跑 `npm test` 就跑）。
+4. **再推远程、开 PR**。
+
+注意：不要改写**已经推送**的历史（那需要 force-push，也会让 tag 与提交脱节）；需要调整就新开分支。
 
 ## 禁止
 
