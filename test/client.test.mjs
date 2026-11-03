@@ -47,10 +47,10 @@ const PURE_KEYS = [
   "trendScaleOf", "trendYNorm",
   "donutRowsOf", "donutArcPath", "validOf",
   // v0.2.0 增量（SPEC §6）
-  "phaseAfterTick", "summaryCellsOf", "tipPlacementOf", "tipRowsOf",
+  "phaseAfterTick", "summaryCellsOf", "tipPlacementOf", "tipRowsOf", "hiddenModelCountOf",
   "pctTextOf", "donutTipTextOf", "needHeatmapRefreshOf", "cursorStepOf", "backfillUiOf",
 ];
-test("__pure 导出面快照（35 个纯函数、冻结）", { timeout: 5000 }, () => {
+test("__pure 导出面快照（36 个纯函数、冻结）", { timeout: 5000 }, () => {
   assert.deepEqual(Object.keys(P).sort(), [...PURE_KEYS].sort());
   assert.ok(Object.isFrozen(P));
 });
@@ -616,6 +616,17 @@ test("tipPlacementOf：锚点右侧优先、右侧放不下翻到左侧、两轴
   }
 });
 
+test("hiddenModelCountOf：按悬停日统计未画出的有量模型（不是区间级）", { timeout: 5000 }, () => {
+  const shown = ["p/a", "p/b", "p/c", "p/d", "p/f", "p/g"].map((key) => ({ key }));
+  const day = { byModel: { "p/a": 10, "p/b": 0, "p/c": 5, "p/d": -3, "p/e": 7 } };
+  assert.equal(P.hiddenModelCountOf(day, shown), 1, "只有 p/e 在当日有量且未画出");
+  // 同一个 day 换成「只画 1 个模型」：p/c 与 p/e 都算隐藏，0/负值不算
+  assert.equal(P.hiddenModelCountOf(day, [{ key: "p/a" }]), 2);
+  // 没有隐藏模型的普通一天不应出现「另有 N 个」
+  assert.equal(P.hiddenModelCountOf({ byModel: { "p/a": 10, "p/b": 5 } }, shown), 0);
+  assert.equal(P.hiddenModelCountOf(null, shown), 0);
+});
+
 test("tipRowsOf：0/负/缺值模型行不进卡片；值走万/亿简写；非数组输入空表", { timeout: 5000 }, () => {
   const rows = [{ key: "a", color: "c1" }, { key: "b", color: "c2" }, { key: "c", color: "c3" }];
   const out = P.tipRowsOf({ byModel: { a: 1234567, b: 0, c: -9 } }, rows);
@@ -768,7 +779,7 @@ test("热力图 tooltip 用万/亿简写而非完整千分位", { timeout: 5000 
   assert.ok(!titles[0].includes("120,000,000"), "tooltip 不应再显示完整千分位：" + titles[0]);
 });
 
-test("趋势图图例纯展示：不可点击隐藏，全部模型恒列出", { timeout: 5000 }, () => {
+test("趋势图图例纯展示：不可点击隐藏，最多 6 个模型", { timeout: 5000 }, () => {
   assert.ok(!clientSrc.includes("hiddenKeys"), "不应再有「图例点掉模型」的状态");
   assert.ok(!clientSrc.includes("dus-legendBtn"), "不应再有可点击图例的样式类");
   assert.ok(!clientSrc.includes("toggleKey"), "不应再有图例切换逻辑");
@@ -798,6 +809,43 @@ test("client 模块 id 必须与包名逐字一致（否则宿主拒绝加载整
   const m = clientSrc.match(/__ModuleLoader__\.load\(\{[\s\S]{0,300}?id:\s*"([^"]+)"/);
   assert.ok(m !== null, "未找到 __ModuleLoader__.load 的 id");
   assert.equal(m[1], pkg.name, "client 模块 id 必须与 package.json 的 name 一致");
+});
+
+test("apply 注册侧边栏独立面板（main key + sidebar.panellist），不再进设置", { timeout: 5000 }, () => {
+  const injections = [];
+  const registrations = [];
+  const ctx = {
+    effect: (fn) => { fn(); },
+    locale: {
+      register: () => () => {},
+      bind: () => (key) => key,
+    },
+    slots: {
+      inject: (slot, callback) => {
+        injections.push(slot);
+        callback();
+        return () => {};
+      },
+      register: (options, component) => {
+        registrations.push({ options, component });
+        return () => {};
+      },
+    },
+  };
+  captured.apply(ctx);
+  assert.deepEqual(injections.slice().sort(), ["main", "sidebar.panellist"]);
+  const main = registrations.find((r) => r.options.name === "main");
+  assert.ok(main !== undefined, "缺少 main 主面板注册（点导航行会抛错）");
+  assert.equal(main.options.key, "usage-stats");
+  assert.equal(main.component, captured.__ui.UsageStatsPage);
+  const row = registrations.find((r) => r.options.name === "sidebar.panellist");
+  assert.ok(row !== undefined, "缺少 sidebar.panellist 导航行注册");
+  assert.equal(row.options.id, "usage-stats", "导航行 id 必须与 main 的 key 一致");
+  assert.equal(row.options.order, 20, "应排在「插件」(0) 与「自动化任务」(10) 之后");
+  assert.equal(row.component, captured.__ui.UsageStatsPanelIcon);
+  assert.equal(typeof row.options.label, "function", "label 必须是函数以跟随语言切换");
+  assert.equal(row.options.label(), "sectionLabel");
+  assert.equal(registrations.some((r) => r.options.name === "settings.section"), false, "不应再注册到设置页");
 });
 //#endregion
 
@@ -921,21 +969,63 @@ test("渲染冒烟：环图数据含 null 元素不炸（脏数据防护）", { 
   assert.ok(!all.includes("null"), "null 元素不应进入渲染结果");
 });
 
-test("渲染冒烟：图例列出全部有量模型，不隐藏不截断（行为断言，非源码 grep）", { timeout: 5000 }, () => {
-  // 曾经的源码 grep 版断言过紧：一次完全正确的改名（visibleRows → legendRows）就会误杀，
-  // 同时又太松（把 visibleRows 改成 modelRows.slice(0,1) 也只因字面量对不上而红）。
-  const rows = P.trendModelRowsOf([
-    { byModel: { "p/a": 10, "p/b": 30 } },
-    { byModel: { "p/a": 5, "p/c": 0 } },
-    { byModel: { "p/d": 1 } },
-  ]);
-  assert.deepEqual(rows.map((r) => r.key), ["p/b", "p/a", "p/d"], "图例必须列出全部有量模型");
-  // 组件层：图例项应等于全部模型行数，且以 span 渲染（不可点击）
-  const points = [{ date: P.dateKey(new Date()), byModel: { "p/a": 10, "p/b": 30, "p/d": 1 }, total: 41 }];
+test("渲染冒烟：末月标签右对齐——窄列不再被省略号截成「1..」", { timeout: 5000 }, () => {
+  const tree = UI.HeatmapCard({ days: [], mode: "daily", onMode: () => {}, stale: false });
+  const monthsRow = collect(tree).filter((n) => n.props?.className === "dus-hmMonths")[0];
+  assert.ok(monthsRow, "应渲染月份行");
+  const labels = collect(monthsRow).filter((n) => n.type === "span");
+  assert.ok(labels.length >= 12, "52 周应铺出完整月份序列，实际：" + labels.length);
+  assert.equal(labels[labels.length - 1].props.className, "dus-hmMonthEnd", "末月标签应带右对齐类");
+  assert.ok(labels.slice(0, -1).every((n) => n.props.className !== "dus-hmMonthEnd"), "只有末月右对齐");
+  for (const n of labels) assert.match(String(n.props.style?.gridColumn), /^span \d+$/);
+});
+
+test("渲染冒烟：模型用量右侧列表无悬停文本，环扇区仍保留悬停卡片", { timeout: 5000 }, () => {
+  const modelsResp = {
+    models: [
+      { key: "p/m1", tokens: 1000 }, { key: "p/m2", tokens: 500 }, { key: "p/m3", tokens: 100 },
+    ],
+    total: 1600,
+  };
+  const tree = UI.DonutCard({ modelsResp, err: false, onRetry: () => {} });
+  const nodes = collect(tree);
+  const rows = nodes.filter((n) => n.props?.className === "dus-mrow");
+  assert.equal(rows.length, 3, "应渲染 3 个模型行");
+  for (const row of rows) {
+    assert.equal(row.props.title, undefined, "模型行不应带原生 title（浏览器悬停文本框）");
+    assert.equal(row.props.onMouseEnter, undefined, "模型行不应再触发悬停卡片");
+  }
+  // 列表内部（名字/数值）也不许残留 title——那正是「309,184,178 Token」白框的来源
+  assert.equal(nodes.filter((n) => n.props?.title !== undefined).length, 0, "列表内任何元素都不应带 title");
+  // 环形扇区的悬停卡片保留（图示区仍可查看单模型占比）
+  const arcs = nodes.filter((n) => n.type === "path");
+  assert.equal(arcs.length, 3, "应渲染 3 个扇区");
+  assert.ok(arcs.every((n) => typeof n.props?.onMouseEnter === "function"), "扇区悬停卡片应保留");
+});
+
+test("渲染冒烟：趋势图只画用量前 6 的模型，其余不进图例/折线", { timeout: 5000 }, () => {
+  // 纯函数仍返回全部模型（排序不丢信息），截断发生在组件层——这样两件事可以分别断言。
+  const byModel = {};
+  for (let i = 1; i <= 8; i += 1) byModel["p/m" + i] = i * 10;
+  const rows = P.trendModelRowsOf([{ byModel }]);
+  assert.equal(rows.length, 8, "trendModelRowsOf 仍应返回全部有量模型");
+  assert.equal(rows[0].key, "p/m8", "必须按区间用量降序，第一个是最大模型");
+
+  const points = [{ date: P.dateKey(new Date()), byModel, total: 360 }];
   const tree = UI.TrendCard({ trend: { granularity: "day", points }, err: false, onRetry: () => {}, rangeLabel: "近 7 日" });
   const items = collect(tree).filter((n) => n.props?.className === "dus-legendItem");
-  assert.equal(items.length, 3, "图例应列出全部 3 个有量模型");
+  assert.equal(items.length, 6, "图例最多 6 个模型");
+  assert.deepEqual(
+    items.map((n) => texts(n).join("")),
+    ["p/m8", "p/m7", "p/m6", "p/m5", "p/m4", "p/m3"],
+    "图例应取用量最高的 6 个，按降序",
+  );
   assert.ok(items.every((n) => n.type === "span"), "图例项必须是 span（不可点击）");
+  const paths = collect(tree).filter((n) => n.type === "path");
+  assert.equal(paths.length, 6, "折线也只画 6 条（图例与线永远一致）");
+  const all = texts(tree).join("|");
+  assert.ok(!all.includes("p/m1"), "被截掉的模型不应出现在图例里");
+  assert.ok(!all.includes("p/m2"), "被截掉的模型不应出现在图例里");
 });
 
 //#endregion

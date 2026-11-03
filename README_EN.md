@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-DeepSeek Harness plugin: adds a **Usage Stats** section to the settings page, showing local token usage through a **six-cell summary strip**, a **GitHub-style token activity heatmap**, a **per-model trend chart**, and a **model usage donut**. All data comes from local session logs — nothing is uploaded, and there are no runtime dependencies.
+DeepSeek Harness plugin: adds a standalone **Usage Stats** module to the sidebar (alongside **Plugins** and **Automated Tasks**), showing local token usage through a **six-cell summary strip**, a **GitHub-style token activity heatmap**, a **per-model trend chart**, and a **model usage donut**. All data comes from local session logs — nothing is uploaded, and there are no runtime dependencies.
 
 ![Usage stats panel](docs/images/01-使用统计面板.png)
 
@@ -13,9 +13,9 @@ DeepSeek Harness plugin: adds a **Usage Stats** section to the settings page, sh
 | npm package name | `@bluechonk/dsh-usage-stats` |
 | loader row id | `dsh-usage-stats` |
 | client module id | `@bluechonk/dsh-usage-stats` (must match the package name character for character, otherwise the host refuses to load the whole plugin) |
-| settings section id | `dsh-usage-stats` (the section key inside the `settings.section` slot) |
-| section order | `order: 13` — between "Models" (10) and "Built-in Plugins" (15) |
-| section title | Usage Stats |
+| panel id | `usage-stats` (shared by the sidebar row and the `main` keyed slot) |
+| navigation order | `order: 20` — after Plugins (0) and Automated Tasks (10), before More |
+| navigation title | Usage Stats |
 
 The loader row id and the client module id are **not** shared: the `id` in `cordis.patch.yml` is the stable identifier inside the host, while `name` is the npm package name. The client half's `__ModuleLoader__.load({id})` must match `package.json`'s `name` character for character — otherwise the host reports "loaded without registering … via __ModuleLoader__.load" and the plugin fails to load at all.
 
@@ -27,8 +27,8 @@ The loader row id and the client module id are **not** shared: the `id` in `cord
 | Six-cell summary strip | Total Tokens / Peak Tokens / Cache Hit Rate / Longest Chat / Current Streak / Longest Streak; when the width is too narrow the **whole cell wraps** instead of truncating the label |
 | Token activity | Heatmap cells for 52 calendar weeks (starting Sunday); pills in the top-right switch between Daily / Weekly / Total |
 | Time range | Pills switch between Last 7 Days / Last 30 Days, affecting **only the trend chart below** |
-| Daily token trend | One coloured line per model, drawn with monotone cubic interpolation; the legend on top is display-only, hovering shows each model's usage for that day |
-| Model usage | Donut chart on the left (total tokens in the centre) plus a per-model list on the right (name + share + token count) |
+| Daily token trend | Only the top 6 models by usage in the selected range get a coloured line, drawn with monotone cubic interpolation; the legend is display-only and matches the lines and tooltip rows |
+| Model usage | Donut chart on the left (total tokens in the centre) plus a per-model list on the right (name + share + token count); the list shows no hover text, and the hover card only appears on donut segments |
 | Footer | "Updated at HH:MM" + a refresh button |
 
 The model usage card (donut + model list + the merged "Other models" row):
@@ -45,7 +45,7 @@ The interface is aligned with the local **ZCode** "Settings → Usage Stats" pag
 
 | Element | Value |
 |---|---|
-| Title | 22px / 600 / letter-spacing -.01em (ZCode uses 30px / 600 / -.75px; the DSH settings panel is narrower, so the scale is adjusted) |
+| Title | 22px / 600 / letter-spacing -.01em (ZCode uses 30px / 600 / -.75px; the DSH centre column is narrower, so the scale is adjusted) |
 | Badge | Pill shaped, `padding 3px 12px`, `font-weight 500` (same shape as ZCode's `rounded-full px-3 py-1`) |
 | Summary strip | Numbers at 17px, labels at 13px, number above and label below |
 | Card | 12px radius, no border |
@@ -181,7 +181,7 @@ The host half registers same-origin routes on `ctx.webServer` (all guarded by a 
 - Three states: loading / empty / failed (with an inline retry).
 - A failing route only degrades its own card instead of taking down the panel; **even when old data is present it says "stale, showing the last values" and offers an inline retry**.
 - Every refresh records "Updated at HH:MM"; when a route fails the timestamp freezes and is marked "(some data not updated)"; a failing first load still produces a visible signal.
-- The panel is wrapped in an error boundary: a render failure degrades to a fallback banner instead of blanking the whole settings page.
+- The panel is wrapped in an error boundary: a render failure degrades to a fallback banner instead of blanking the centre column.
 - A silent poll runs every 60 seconds without flashing "Loading"; background tabs skip a beat, coming back to the foreground catches up, closing the page stops it.
 - Backfill progress is visible the whole time (including in the ready state), and finishing triggers one full refresh.
 
@@ -196,7 +196,7 @@ dsh-usage-stats/
 ├─ lib/store.js          # write discipline, atomic writes, single-writer lock
 ├─ lib/aggregate.js      # aggregation semantics (streak / peak / hit rate / share)
 ├─ lib/locale.js         # client copy dictionary (zh / en)
-├─ lib/client.js         # client half: settings.section panel and every chart
+├─ lib/client.js         # client half: sidebar navigation row, main panel, and every chart
 ├─ docs/                 # design and verification notes, audit report, screenshots
 ├─ test/                 # node:test unit and end-to-end tests
 └─ SPEC.md               # full technical specification
@@ -208,7 +208,7 @@ dsh-usage-stats/
 npm run check        # syntax check
 npm test             # unit tests (148 cases)
 npm run verify:e2e   # end to end: runs a backfill over the local session logs and checks the shape of all four API responses
-npm run verify:ui    # real-machine UI smoke test: drives a real browser into the settings page and asserts the panel renders without console errors
+npm run verify:ui    # real-machine UI smoke test: drives a real browser into the sidebar's Usage Stats panel and asserts it renders without console errors
 ```
 
 No runtime dependencies; tests use Node's built-in `node:test`. `verify:e2e` only reads `~/.dsh/sessions` and writes its statistics to a temporary directory that it cleans up afterwards, leaving `~/.dsh/usage-stats/` untouched.
@@ -219,7 +219,7 @@ See [docs/设计与验证.md](docs/设计与验证.md) for the design and verifi
 
 - The heatmap always looks back 52 calendar weeks; older usage only counts towards the all-time figures such as the summary strip.
 - Longest chat time is bucketed per (session, day) and takes the extreme, so cross-day chats are cut at day boundaries — an approximation.
-- The trend tooltip lists at most 8 model rows; the rest is summarised as "N more models not listed".
+- The trend chart draws only the top 6 models by usage in the selected range (legend, lines and tooltip rows stay in sync); the tooltip notes "N more models not listed" — N counts the models with usage on **that day** that are not drawn — and its daily total still includes every model.
 - The cache hit rate only covers cache reads and uncached input, excluding output and reasoning.
 - Sessions that were already running when the plugin was installed are not backfilled for their earlier usage (better to miss than to double count).
 - A sequence gap left by a failed write is skipped by the derived watermark, so that delta is not re-collected (only reachable when several consecutive events fail to write).
