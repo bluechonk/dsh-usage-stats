@@ -41,8 +41,8 @@ icon.svg、cordis.patch.yml、package.json
 
 - 版本策略：`0.1.x` 自用迭代，不做兼容性承诺；`0.2.0` 留给不兼容的界面改版。
 - 不发布到 npm，只经 GitHub 链接安装。
-- **版本号只在发版时 bump**（改代码不动版本号）。
-- **每个发布版本只打一个 GitHub tag，不建 GitHub Release**；tag 与 CHANGELOG 段落一一对应。
+- **版本号只在发版时 bump**，`0.1.x` 连续递增不跳号（改代码不动版本号）。
+- **发版 = 打 tag，不建 GitHub Release**；tag 打在合并后的 `main` 上，与 CHANGELOG 段落一一对应。
 - 发版流程：改代码 → `npm run check` + `npm test` 全绿 → bump 版本号并写 CHANGELOG → 分支 + PR → 合并 → 打 tag（`git tag -a vX.Y.Z`）。
 
 ## 真机验证（唯一路径：dsh web + agent-browser）
@@ -69,16 +69,29 @@ node docs/verify-dsh-web.mjs stop                          # 停实例 + 删临�
 ## 代码与提交约定
 
 - 注释与文档用中文、无 emoji、LF（`.gitattributes` 已配 `* text=auto eol=lf`）。
-- 提交信息 `type(scope): 中文描述`；先写 `.tmp/commit-msg.txt` 再 `git commit -F`。
-- 不直推 `main`：改动落分支，经 PR 合并。
 - 临时脚本与中间产物放 `.tmp/`（已忽略）；可复用流程沉淀到 `docs/`。
+
+### 提交信息
+
+- 格式 `type(scope): 中文描述`；`type` 只用 `feat` / `fix` / `perf` / `refactor` / `docs` / `chore` / `test` / `merge`。
+- `scope` 用模块名：`ui`（`lib/client.js`）、`store`、`fold`、`aggregate`、`host`（`lib/index.js`）、
+  `repo`（包声明、文档、脚本、配置等仓库级改动）；跨模块用逗号分隔，如 `fix(store,aggregate): …`。
+- **正文必写**：为什么这么改 + 做了什么（中文，必要时用 bullets 列点）；只有一行 subject 说不清的改动
+  必须补 body。不允许空 body 的「大字报」提交。
+
+### 分支与 PR
+
+- 分支名 `type/kebab-desc`（如 `fix/ui-narrow-context`、`feat/context-message-split`）。
+- **PR 标题 = 该 PR 要落地的提交标题**；一个 PR 一个语义变更。
+- **PR 用 rebase 合并，禁止 merge commit**（保持 `main` 线性历史）。
+- 小改动先在本地 `commit` 攒着，攒够一批再走 PR。
 
 ### 提交工作流（小步提交 + 合并前整理）
 
 1. **分支上小步提交**：开发时随手 `git commit`，允许 `wip: 尝试 xxx`、`tmp:` 这类中间提交，不追求一步到位。
-2. **合并前整理**：功能稳定后 `git rebase -i <base>`——压缩 wip、重排顺序、合并同主题提交，整理成少数几个语义清晰的提交。
-3. **推送前复查**：`git log --oneline <base>..HEAD` 逐个过一遍，确认每个提交都符合 `type(scope): 中文描述`，且 `npm run check` 通过（能跑 `npm test` 就跑）。
-4. **再推远程、开 PR**。
+2. **合并前整理**：功能稳定后 `git rebase -i <base>`——压缩 wip、重排顺序、合并同主题提交，整理成语义清晰的提交。
+3. **推送前复查**：`git log --oneline <base>..HEAD` 逐个过一遍，确认每个提交都符合上面的提交信息规范，且 `npm run check` 通过（能跑 `npm test` 就跑）。
+4. **再推远程、开 PR**，PR 用 rebase 合并。
 
 注意：不要改写**已经推送**的历史（那需要 force-push，也会让 tag 与提交脱节）；需要调整就新开分支。
 
