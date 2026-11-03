@@ -1,4 +1,4 @@
-// 真机 UI 冒烟：驱动一个真实 DSH 实例，打开设置页「使用统计」，
+// 真机 UI 冒烟：驱动一个真实 DSH 实例，点侧边栏「使用统计」入口，
 // 断言面板完整渲染（摘要条/热力图/趋势图/环图/图例色/按钮），并抓控制台错误。
 //
 // 为什么需要它：单元测试用 React 桩，覆盖不到组件体内的深层分支
@@ -70,16 +70,11 @@ try {
     return r?.result?.value
   }
 
-  // 打开设置 → 使用统计
+  // 侧边栏导航行（aria-label 来自注册项 label）→ 主面板
   const opened = await evalJs(`(async () => {
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-    const acc = [...document.querySelectorAll('button,[role=button]')].find((c) => /账号菜单|Account/i.test(c.getAttribute('aria-label') || ''));
-    if (acc) { acc.click(); await sleep(2000); }
-    const cands = [...document.querySelectorAll('button,[role=menuitem],[role=button],a,li,div,span')];
-    const hit = cands.find((c) => (c.textContent || '').trim() === '设置' && c.querySelectorAll('*').length < 4);
-    if (hit) { hit.click(); await sleep(2500); }
-    const sec = [...document.querySelectorAll('button,[role=button],a')].filter((n) => (n.textContent || '').trim() === '使用统计');
-    if (sec.length) { sec[0].click(); await sleep(4500); }
+    const row = [...document.querySelectorAll('button,[role=button]')].find((c) => /使用统计|Usage Stats/i.test(c.getAttribute('aria-label') || ''));
+    if (row) { row.click(); await sleep(4500); }
     return { panel: !!document.querySelector('.dus-root') };
   })()`)
   if (opened?.panel !== true) {
