@@ -6,7 +6,7 @@
 // 沙箱纪律：不碰任何生产文件，物化缺什么桩就补什么桩，client.js 一行不改。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 
 // —— 最小 React 桩：只按 client.js 实际摸到的面给（Component/五个 hook/createElement）——
 class StubComponent {}
@@ -809,6 +809,20 @@ test("client 模块 id 必须与包名逐字一致（否则宿主拒绝加载整
   const m = clientSrc.match(/__ModuleLoader__\.load\(\{[\s\S]{0,300}?id:\s*"([^"]+)"/);
   assert.ok(m !== null, "未找到 __ModuleLoader__.load 的 id");
   assert.equal(m[1], pkg.name, "client 模块 id 必须与 package.json 的 name 一致");
+});
+
+test("包根 manifest 声明 icon 且文件合法（插件面板行图标靠它）", { timeout: 5000 }, () => {
+  // 宿主 readPluginMeta 只认两处：包根 package.json 的 `icon`（相对路径），
+  // 或 exports 里的 `<specifier>/icon`。两处都没有时插件面板只能画默认占位图。
+  const root = new URL("../", import.meta.url);
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const icon = pkg.icon ?? pkg.exports?.["./icon"];
+  assert.ok(typeof icon === "string" && icon !== "", "package.json 缺少 icon 声明（或 ./icon 导出）");
+  assert.match(icon, /^\.\//, "icon 必须是包内相对路径");
+  assert.ok(/\.(svg|png|jpe?g|webp)$/i.test(icon), "icon 必须是 SVG/PNG/JPEG/WebP");
+  const file = new URL(icon.replace(/^\.\//, ""), root);
+  assert.ok(existsSync(file), "icon 指向的文件不存在：" + icon);
+  assert.ok(statSync(file).size <= 256 * 1024, "icon 超过 256 KiB（宿主上限）");
 });
 
 test("apply 注册侧边栏独立面板（main key + sidebar.panellist），不再进设置", { timeout: 5000 }, () => {

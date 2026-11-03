@@ -18,6 +18,7 @@ A standalone sidebar module, sitting right after **Automated Tasks** and before 
 | panel id | `usage-stats` (shared by the sidebar row and the `main` keyed slot) |
 | navigation order | `order: 20` — after Plugins (0) and Automated Tasks (10), before More |
 | navigation title | Usage Stats |
+| icon | `icon.svg` (the `icon` field in the package-root `package.json`; row artwork in the Plugins → Installed list) |
 
 The loader row id and the client module id are **not** shared: the `id` in `cordis.patch.yml` is the stable identifier inside the host, while `name` is the npm package name. The client half's `__ModuleLoader__.load({id})` must match `package.json`'s `name` character for character — otherwise the host reports "loaded without registering … via __ModuleLoader__.load" and the plugin fails to load at all.
 
