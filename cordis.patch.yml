@@ -4,8 +4,9 @@
 # host 半边(lib/index.js)订阅 session/event 采集 token 用量(照抄官方 tokenUsage
 # 投影折叠语义),JSONL 落盘 ~/.dsh/usage-stats/,并经内核 webServer 注册四条
 # 只读 GET 路由(loopback+GET/HEAD 守卫)。
-# client 半边(lib/client.js)注册 settings.section order 13「使用统计」分区,
-# fetch 同源 API 手绘 SVG/div 三图渲染。不改官方代码、零新依赖。
+# client 半边(lib/client.js)注册侧边栏独立模块:导航行走 sidebar.panellist
+# (id usage-stats, order 20, 排在「插件」「自动化任务」之后),页面走 main keyed slot
+# (key usage-stats),fetch 同源 API 手绘 SVG/div 三图渲染。不改官方代码、零新依赖。
 # 回滚:plugin remove(或本 patch enabled:false);数据目录整体可删。
 - insert:
     - id: dsh-usage-stats
