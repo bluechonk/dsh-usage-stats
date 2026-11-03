@@ -14,6 +14,8 @@ DeepSeek Harness 社区插件「使用统计」：订阅宿主 `session/event` �
 | `lib/client.js` | 侧边栏导航行 + 主面板（React 组件 + 样式 + 三态） |
 | `lib/index.js` | host 接线：事件采集 → fold → store；路由注册；历史回填 |
 
+包声明（`package.json`）：根 `icon` 字段指向 `icon.svg`，宿主 `readPluginMeta` 据此在「插件 → 已安装」列表渲染行图标；缺该字段（或 `exports` 里的 `<specifier>/icon`）时只能回退默认占位图。
+
 ## 1. 会话事件形状
 
 监听入口为 `ctx.on("session/event", (session, event) => …)`；`session.id` 是会话 uuid，`event.seq` 是事件序号。
