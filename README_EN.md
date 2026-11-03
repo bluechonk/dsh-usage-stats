@@ -4,6 +4,8 @@
 
 DeepSeek Harness plugin: adds a standalone **Usage Stats** module to the sidebar (alongside **Plugins** and **Automated Tasks**), showing local token usage through a **six-cell summary strip**, a **GitHub-style token activity heatmap**, a **per-model trend chart**, and a **model usage donut**. All data comes from local session logs — nothing is uploaded, and there are no runtime dependencies.
 
+A standalone sidebar module, sitting right after **Automated Tasks** and before **More**:
+
 ![Usage stats panel](docs/images/01-使用统计面板.png)
 
 ## Plugin identity
@@ -41,7 +43,7 @@ Light theme (same layout, both themes verified):
 
 ## Design baseline
 
-The interface is aligned with the local **ZCode** "Settings → Usage Stats" page. Measured parameters and the item-by-item comparison live in [docs/设计与验证.md](docs/设计与验证.md):
+The interface takes its visual language (palette, cards, heatmap cells) from the local **ZCode** "Settings → Usage Stats" page, while the layout is a standalone sidebar panel. Measured parameters and the item-by-item comparison live in [docs/设计与验证.md](docs/设计与验证.md):
 
 | Element | Value |
 |---|---|
