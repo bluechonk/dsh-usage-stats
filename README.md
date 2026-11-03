@@ -18,6 +18,7 @@ DeepSeek Harness 插件：在侧边栏新增「使用统计」独立模块（与
 | 面板 id | `usage-stats`（侧边栏导航行与主面板 `main` keyed slot 共用） |
 | 导航顺序 | `order: 20` —— 位于「插件」（0）与「自动化任务」（10）之后、「更多」之前 |
 | 导航标题 | 使用统计 |
+| 图标 | `icon.svg`（包根 `package.json` 的 `icon` 字段；「插件 → 已安装」列表的行图标） |
 
 loader 行 id 与 client 模块 id **不共用**：`cordis.patch.yml` 的 `id` 是宿主内的稳定标识，`name` 才是 npm 包名；client 半的 `__ModuleLoader__.load({id})` 必须与 `package.json` 的 `name` 逐字一致，否则宿主会报「loaded without registering … via __ModuleLoader__.load」并让插件整体加载失败。
 
