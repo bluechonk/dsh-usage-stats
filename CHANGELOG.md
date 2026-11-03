@@ -4,7 +4,7 @@
 
 本项目源自社区插件的 MIT 许可实现（早期版本源自 [Make0209/dsh-usage-stats](https://github.com/Make0209/dsh-usage-stats)，看板实现基于 [axuan-1314/dsh-usage-stats](https://github.com/axuan-1314/dsh-usage-stats)），本仓库在其基础上重做了看板。版权声明见 [LICENSE](LICENSE)，来源与致谢见 [README](README.md#致谢与许可)。
 
-**版本策略**：自用插件，走 `0.1.x` 迭代——接口与数据结构未稳定，不做兼容性承诺；`0.2.0` 留给不兼容的界面改版。不发布到 npm，只经 GitHub 链接安装。**每个发布版本对应一个 GitHub tag 与一条 Release；版本号只在发版时 bump**（改代码不动版本号），杜绝「有版本号没 tag」或「面板版本与 tag 对不上」的空档。
+**版本策略**：自用插件，走 `0.1.x` 迭代——接口与数据结构未稳定，不做兼容性承诺；`0.2.0` 留给不兼容的界面改版。不发布到 npm，只经 GitHub 链接安装。**每个发布版本只打一个 GitHub tag，不单独建 GitHub Release**（版本以 tag + 本文件为准）；**版本号只在发版时 bump**（改代码不动版本号），杜绝「有版本号没 tag」或「面板版本与 tag 对不上」的空档。
 
 ## 0.1.2
 
