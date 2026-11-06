@@ -6,7 +6,7 @@ DeepSeek Harness plugin: adds a standalone **Usage Stats** module to the sidebar
 
 A standalone sidebar module, sitting right after **Automated Tasks** and before **More**:
 
-![Usage stats panel](docs/images/01-使用统计面板.png)
+![Usage stats panel](docs/images/01-usage-stats-panel.png)
 
 ## Plugin identity
 
@@ -36,15 +36,15 @@ The loader row id and the client module id are **not** shared: the `id` in `cord
 
 The model usage card (donut + model list + the merged "Other models" row):
 
-![Model usage donut](docs/images/02-模型用量环形图.png)
+![Model usage donut](docs/images/02-model-usage-donut.png)
 
 Light theme (same layout, both themes verified):
 
-![Light theme](docs/images/03-浅色主题.png)
+![Light theme](docs/images/03-light-theme.png)
 
 ## Design baseline
 
-The interface takes its visual language (palette, cards, heatmap cells) from the local **ZCode** "Settings → Usage Stats" page, while the layout is a standalone sidebar panel. Measured parameters and the item-by-item comparison live in [docs/设计与验证.md](docs/设计与验证.md):
+The interface takes its visual language (palette, cards, heatmap cells) from the local **ZCode** "Settings → Usage Stats" page, while the layout is a standalone sidebar panel. Measured parameters and the item-by-item comparison live in [docs/design-and-verification.md](docs/design-and-verification.md):
 
 | Element | Value |
 |---|---|
@@ -216,7 +216,7 @@ npm run verify:ui    # real-machine UI smoke test: drives a real browser into th
 
 No runtime dependencies; tests use Node's built-in `node:test`. `verify:e2e` only reads `~/.dsh/sessions` and writes its statistics to a temporary directory that it cleans up afterwards, leaving `~/.dsh/usage-stats/` untouched.
 
-See [docs/设计与验证.md](docs/设计与验证.md) for the design and verification details (design baseline, audit and fix log), [SPEC.md](SPEC.md) for the complete interface contract, and [CHANGELOG.md](CHANGELOG.md) for version history.
+See [docs/design-and-verification.md](docs/design-and-verification.md) for the design and verification details (design baseline, audit and fix log), [SPEC.md](SPEC.md) for the complete interface contract, and [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## Known limitations
 

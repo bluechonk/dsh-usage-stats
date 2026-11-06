@@ -14,7 +14,7 @@
 
 ### 文档
 
-- **文档文件名改为英文**：`docs/设计与验证.md` → `docs/design-and-verification.md`，`docs/images/` 三张截图改为 `01-usage-stats-panel.png` / `02-model-usage-donut.png` / `03-light-theme.png`（中文名在源码注释、终端命令与 shell 转义里都会引入摩擦）；全部引用同步更新。
+- **文档文件名改为英文**：`docs/设计与验证.md` → `docs/design-and-verification.md`，`docs/images/` 三张截图改为 `01-usage-stats-panel.png` / `02-model-usage-donut.png` / `03-light-theme.png`（中文名在源码注释、终端命令与 shell 转义里都会引入摩擦，且与全局「文件名用英文」规则不符）；README / README_EN / SPEC / AGENTS 及抓图脚本的引用全部同步更新。
 
 ## 0.1.4
 
@@ -30,7 +30,7 @@
 
 ### 文档
 
-- 三张截图按新热力图重拍（`1月`–`12月` 全月标签、12 月虚线占位），README / README_EN / `docs/设计与验证.md` 的热力图说明同步改写。
+- 三张截图按新热力图重拍（`1月`–`12月` 全月标签、12 月虚线占位），README / README_EN / `docs/design-and-verification.md` 的热力图说明同步改写。
 
 ## 0.1.3
 
@@ -57,7 +57,7 @@
 ### 文档
 
 - 三张截图全部按新界面重拍（1280×900 @2x，深色面板 / 模型用量卡 / 浅色主题）：此前还是「设置页里的使用统计分区」的旧形态，且拍于趋势图截断、热力图末月截断、环形列表悬停文本三处修复之前。
-- README / README_EN 的界面说明同步改写（导航位置、趋势图前 6 个模型、环形列表无悬停文本）；`docs/设计与验证.md` §4.3 实机核对改为按新行为逐条描述。
+- README / README_EN 的界面说明同步改写（导航位置、趋势图前 6 个模型、环形列表无悬停文本）；`docs/design-and-verification.md` §4.3 实机核对改为按新行为逐条描述。
 
 ## 0.1.1
 
@@ -66,7 +66,7 @@
 ### 新增
 
 - **Git 仓库安装**：包声明补齐 `exports["./cordis.patch.yml"]`（宿主按 exports 解析 patch 路径，缺失则装了不生效）、`dsh.client.inject` 补 `@deepseek-ai/dsh-client-locale`、新增 `icon.svg`（插件市场显示图标）。现在可在「插件 → 添加插件」里直接输入仓库地址安装，无需改任何配置文件。
-- `docs/设计与验证.md`、`docs/audit-report.md`（三轮代码审核结论）、`README.md` 与 `README_EN.md` 文档体系。
+- `docs/design-and-verification.md`、`docs/audit-report.md`（三轮代码审核结论）、`README.md` 与 `README_EN.md` 文档体系。
 
 ### 修复
 
