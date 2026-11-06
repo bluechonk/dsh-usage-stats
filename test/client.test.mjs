@@ -123,20 +123,51 @@ test("monotonePath：重复 x 防 NaN（v0.2.0 §6：dx<=0 段置 s=0，路径�
 //#endregion
 
 //#region 热力图（hmColumnsOf / hmMonthLabelsOf / hmRenderOf / hmLevel）
-test("hmColumnsOf：固定 52 列 × 每列 7 格，列首全部周日起始、列内逐日递增", { timeout: 5000 }, () => {
+// 口径：当年 1 月 1 日到 12 月 31 日所在整周，列数随年份 52~54。断言一律对列阵实际内容判，
+// 不写死列数——写死 52 的那套是旧「滚动 52 周」口径，会把年份天数差异当成回归。
+test("hmColumnsOf：当年 1/1–12/31 铺成整周列，列首全部周日起始、列内逐日递增", { timeout: 5000 }, () => {
   const cols = P.hmColumnsOf([]);
-  assert.equal(cols.length, 52);
+  assert.ok(cols.length >= 52 && cols.length <= 54, "当年周数应在 52~54，实际：" + cols.length);
   for (const col of cols) {
     assert.equal(col.length, 7);
     assert.equal(col[0].date.getDay(), 0); // 周日对齐（getDay 0=周日）
   }
   for (let k = 0; k < 7; k++) assert.equal(P.dateKey(cols[0][k].date), P.dateKey(P.addDays(cols[0][0].date, k)));
+  // 整条时间轴连续无空洞：列间也要接得上
+  for (let w = 1; w < cols.length; w += 1) {
+    assert.equal(P.dateKey(cols[w][0].date), P.dateKey(P.addDays(cols[w - 1][6].date, 1)));
+  }
 });
 
-test("hmColumnsOf：末列含今天（末周对齐当前周）", { timeout: 5000 }, () => {
+test("hmColumnsOf：左端锚 1 月 1 日、右端覆盖 12 月 31 日（12 月永远在右，不是 11 月）", { timeout: 5000 }, () => {
   const cols = P.hmColumnsOf([]);
-  const todayKey = P.dateKey(new Date());
-  assert.ok(cols[51].some((c) => P.dateKey(c.date) === todayKey));
+  const year = new Date().getFullYear();
+  const flat = cols.flat();
+  const inYear = flat.filter((c) => c.inYear);
+  assert.equal(P.dateKey(inYear[0].date), year + "-01-01", "第一个当年日必须是 1 月 1 日");
+  assert.equal(P.dateKey(inYear[inYear.length - 1].date), year + "-12-31", "最后一个当年日必须是 12 月 31 日");
+  assert.ok(cols.some((col) => col.some((c) => c.inYear && c.date.getMonth() === 11)), "12 月必须在列阵里");
+});
+
+test("hmColumnsOf：未来日与年外日分别标记，且年外日不参与统计", { timeout: 5000 }, () => {
+  const cols = P.hmColumnsOf([{ date: "9999-01-01", tokens: 500, turns: 9 }]);
+  const now = new Date();
+  const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  for (const c of cols.flat()) {
+    if (c.inYear) {
+      const isFutureDay = c.date.getTime() > today0.getTime();
+      assert.equal(c.future, isFutureDay, "当年格的 future 标记必须与真实日期一致：" + P.dateKey(c.date));
+      if (isFutureDay) assert.equal(c.rec, false, "未来日不可能有记录：" + P.dateKey(c.date));
+    } else {
+      assert.equal(c.future, false, "年外日不是「未来」，它根本不该画");
+      assert.equal(c.rec, false, "年外日不得吃进统计");
+      assert.equal(c.tokens, 0);
+      assert.equal(c.turns, 0);
+    }
+  }
+  // 今年 1 月 1 日之前那几条尾巴必须是年外格
+  const before = cols[0][0].date;
+  assert.ok(before.getFullYear() === now.getFullYear() || cols[0][0].inYear === false);
 });
 
 test("hmColumnsOf：API 逐日数组按 dateKey 对号入座，缺失日 tokens/turns=0 且 rec=false", { timeout: 5000 }, () => {
@@ -151,26 +182,26 @@ test("hmColumnsOf：API 逐日数组按 dateKey 对号入座，缺失日 tokens/
   assert.equal(miss.turns, 0);
 });
 
-test("hmColumnsOf：坏记录逐条跳过、非数组输入也返回 52 列", { timeout: 5000 }, () => {
+test("hmColumnsOf：坏记录逐条跳过、非数组输入也铺出完整当年列阵", { timeout: 5000 }, () => {
   for (const bad of [null, 42, {}, { date: 7 }, ["x"], { date: "not-a-date-key", tokens: 99 }]) {
     const cols = P.hmColumnsOf([bad]);
-    assert.equal(cols.length, 52);
+    assert.ok(cols.length >= 52);
     assert.equal(cols[0].length, 7);
     // 坏记录必须整格丢弃：既不能标「有记录」，也不能带出 tokens/turns
     const flat = cols.flat();
     assert.equal(flat.filter((c) => c.rec === true).length, 0, "坏记录不得被当成有记录");
     assert.ok(flat.every((c) => c.rec === false || (c.tokens > 0 || c.turns > 0)), "有记录的格子必须带有效数值");
   }
-  assert.equal(P.hmColumnsOf(null).length, 52);
-  assert.equal(P.hmColumnsOf(undefined).length, 52);
+  assert.ok(P.hmColumnsOf(null).length >= 52);
+  assert.ok(P.hmColumnsOf(undefined).length >= 52);
 });
 
-/** 手工造列（n 格、第 recAt 格标 rec），供月份标签锚点测试用，与今天无关。 */
-function mkCol(y, mo, d, n = 7, recAt = -1) {
-  return Array.from({ length: n }, (_, i) => ({ date: new Date(y, mo - 1, d + i), rec: i === recAt, tokens: 0, turns: 0 }));
+/** 手工造列（n 格、第 recAt 格标 rec），inYear 默认全部当年，供月份标签锚点测试用，与今天无关。 */
+function mkCol(y, mo, d, n = 7, recAt = -1, inYear = true) {
+  return Array.from({ length: n }, (_, i) => ({ date: new Date(y, mo - 1, d + i), inYear, future: false, rec: i === recAt, tokens: 0, turns: 0 }));
 }
 
-test("hmMonthLabelsOf：锚点优先级=周内首个 1 号 > 首个有记录日 > 周日；相邻同月并 span", { timeout: 5000 }, () => {
+test("hmMonthLabelsOf：锚点优先级=周内首个 1 号 > 首个有记录日 > 首个当年日；相邻同月并 span", { timeout: 5000 }, () => {
   const cols = [
     mkCol(2026, 3, 28),        // 2026-03-28..04-03：含 4 月 1 号 → 锚 2026-04
     mkCol(2026, 4, 4, 7, 2),   // 无 1 号、04-06 有记录 → 锚 2026-04
@@ -183,46 +214,61 @@ test("hmMonthLabelsOf：锚点优先级=周内首个 1 号 > 首个有记录日 
   ]);
 });
 
-test("hmMonthLabelsOf：超 12 个月从头置空标签；不足 12 个月全保留", { timeout: 5000 }, () => {
-  const m13 = Array.from({ length: 13 }, (_, i) => mkCol(2025 + Math.floor((i) / 12), (i % 12) + 1, 15, 1));
-  const l13 = P.hmMonthLabelsOf(m13);
-  assert.equal(l13.length, 13);
-  assert.equal(l13[0].label, "");
-  assert.ok(l13.slice(1).every((l) => l.label !== ""));
-  assert.equal(l13[12].label, "1月"); // 2026-01 → 数字月拼「1月」
-  const m12 = m13.slice(1);
-  const l12 = P.hmMonthLabelsOf(m12);
-  assert.equal(l12.length, 12);
-  assert.ok(l12.every((l) => l.label !== ""));
+test("hmMonthLabelsOf：整周年外的列并入上一段，span 总和守恒", { timeout: 5000 }, () => {
+  // 跨年尾列（12/31 之后那几天）属于明年，不能另起「1月」段，否则去年热力图右端顶出「1月」
+  const col1 = [
+    ...Array.from({ length: 5 }, (_, i) => ({ date: new Date(2026, 11, 27 + i), inYear: true, future: false, rec: false, tokens: 0, turns: 0 })),
+    ...Array.from({ length: 2 }, (_, i) => ({ date: new Date(2027, 0, 1 + i), inYear: false, future: false, rec: false, tokens: 0, turns: 0 })),
+  ];
+  const col2 = Array.from({ length: 7 }, (_, i) => ({ date: new Date(2027, 0, 3 + i), inYear: false, future: false, rec: false, tokens: 0, turns: 0 }));
+  const labels = P.hmMonthLabelsOf([col1, col2]);
+  assert.equal(labels.length, 1, "年外列应并入上一段而不是新起一段");
+  assert.equal(labels[0].key, "2026-12");
+  assert.equal(labels[0].span, 2);
+  assert.equal(labels.reduce((a, l) => a + l.span, 0), 2, "span 总和必须等于列数");
 });
 
-test("hmMonthLabelsOf：真实 52 列——span 总和守恒=52、月键合法、置空规则与月数自洽", { timeout: 5000 }, () => {
-  const labels = P.hmMonthLabelsOf(P.hmColumnsOf([]));
-  assert.equal(labels.reduce((a, l) => a + l.span, 0), 52);
-  assert.ok(labels.length >= 12 && labels.length <= 13);
-  const hidden = Math.max(0, labels.length - 12);
-  labels.forEach((l, i) => {
+test("hmMonthLabelsOf：真实当年列阵——1 月到 12 月齐全、span 守恒、标签与月键自洽", { timeout: 5000 }, () => {
+  const cols = P.hmColumnsOf([]);
+  const labels = P.hmMonthLabelsOf(cols);
+  assert.equal(labels.reduce((a, l) => a + l.span, 0), cols.length, "span 总和必须等于列数");
+  assert.ok(labels.length >= 12, "当年至少应铺出 12 个月，实际：" + labels.length);
+  const months = labels.map((l) => Number(l.key.slice(5, 7)));
+  assert.equal(months[0], 1, "最左必须是 1 月，实际：" + labels[0].key);
+  assert.equal(months[months.length - 1], 12, "最右必须是 12 月，实际：" + labels[labels.length - 1].key);
+  assert.deepEqual(months, Array.from({ length: 12 }, (_, i) => i + 1), "月份必须从 1 到 12 连续不重复");
+  for (const l of labels) {
     assert.match(l.key, /^\d{4}-\d{2}$/);
-    assert.equal(l.label === "", i < hidden);
-    if (l.label !== "") assert.equal(l.label, Number(l.key.slice(5, 7)) + "月");
-  });
+    assert.equal(l.label, Number(l.key.slice(5, 7)) + "月");
+  }
 });
 
-test("hmRenderOf daily：52 行 × 7 格，今天=满档有 tooltip，缺勤日=0 档无 tooltip", { timeout: 5000 }, () => {
+test("hmRenderOf daily：今天=满档有 tooltip，未来格走虚线、缺勤日=0 档无 tooltip", { timeout: 5000 }, () => {
   const todayKey = P.dateKey(new Date());
   const cols = P.hmColumnsOf([{ date: todayKey, tokens: 100, turns: 4 }]);
   const rd = P.hmRenderOf(cols, "daily");
-  assert.equal(rd.length, 52);
+  assert.equal(rd.length, cols.length);
   assert.ok(rd.every((r) => r.cells.length === 7));
-  const ti = cols[51].findIndex((c) => P.dateKey(c.date) === todayKey);
-  const tc = rd[51].cells[ti];
+  const lastW = cols.findIndex((col) => col.some((c) => P.dateKey(c.date) === todayKey));
+  assert.ok(lastW >= 0, "今天必须落在列阵里");
+  const ti = cols[lastW].findIndex((c) => P.dateKey(c.date) === todayKey);
+  const tc = rd[lastW].cells[ti];
+  assert.equal(tc.state, "past");
   assert.equal(tc.has, true);
   assert.equal(tc.lvl, 4); // dayMax=100 → v/max*4=4，顶档
-  const d = cols[51][ti].date;
+  const d = cols[lastW][ti].date;
   assert.equal(tc.title, d.getFullYear() + "年" + (d.getMonth() + 1) + "月" + d.getDate() + "日\n100 tokens · 4 轮消息");
+  // 未来格：虚线态、不填色、不弹卡片
+  const futureCells = rd.flatMap((r) => r.cells.filter((c) => c.state === "future"));
+  assert.ok(futureCells.length > 0, "当年布局下今天之后必有未来格（12 月未到）");
+  for (const c of futureCells) {
+    assert.equal(c.lvl, 0, "未来格不得带色阶");
+    assert.equal(c.has, false, "未来格不得标为有用量");
+    assert.equal(c.title, "", "未来格不弹卡片");
+  }
   const yKey = P.dateKey(P.addDays(new Date(), -1));
   let yc = null;
-  for (let w = 0; w < 52 && yc === null; w++)
+  for (let w = 0; w < cols.length && yc === null; w++)
     for (let i = 0; i < 7; i++)
       if (P.dateKey(cols[w][i].date) === yKey) yc = rd[w].cells[i];
   assert.ok(yc !== null);
@@ -231,35 +277,52 @@ test("hmRenderOf daily：52 行 × 7 格，今天=满档有 tooltip，缺勤日=
   assert.equal(yc.title, "");
 });
 
-test("hmRenderOf weekly/total：列值=colMax 时 7 格底对齐满柱，零值列全灭；整列 tooltip 锚末列日", { timeout: 5000 }, () => {
+test("hmRenderOf weekly/total：有量列底对齐满柱，零值列全灭；整列 tooltip 锚列末当年日", { timeout: 5000 }, () => {
   const todayKey = P.dateKey(new Date());
   const cols = P.hmColumnsOf([{ date: todayKey, tokens: 100, turns: 4 }]);
   const rw = P.hmRenderOf(cols, "weekly");
-  const last = cols[51][6].date;
+  const w = cols.findIndex((col) => col.some((c) => P.dateKey(c.date) === todayKey));
+  // 锚点是「列内最后一个已到的当年日」——本周剩下几天还没到，不能拿周六当锚
+  const end = cols[w].filter((c) => c.inYear && c.future !== true).slice(-1)[0].date;
   const tail = "\n100 tokens · 4 轮消息";
-  assert.equal(rw[51].title, last.getFullYear() + "年" + (last.getMonth() + 1) + "月" + last.getDate() + "日" + tail);
-  assert.deepEqual(rw[51].cells.map((c) => c.lvl), [4, 4, 4, 4, 4, 4, 4]);
-  assert.deepEqual(rw[51].cells.map((c) => c.has), [true, true, true, true, true, true, true]);
+  assert.equal(rw[w].title, end.getFullYear() + "年" + (end.getMonth() + 1) + "月" + end.getDate() + "日" + tail);
+  const pastRows = rw[w].cells.filter((c) => c.state === "past");
+  assert.ok(pastRows.every((c) => c.lvl === 4 && c.has === true), "本周为唯一的列 → 满柱");
   assert.ok(rw[0].title.endsWith("\n0 tokens · 0 轮消息"));
   assert.deepEqual(rw[0].cells.map((c) => c.lvl + ":" + c.has), ["0:false", "0:false", "0:false", "0:false", "0:false", "0:false", "0:false"]);
   const rt = P.hmRenderOf(cols, "total");
-  assert.deepEqual(rt[51].cells.map((c) => c.lvl), [4, 4, 4, 4, 4, 4, 4]); // 累计末列=全程 colMax
-  assert.deepEqual(rt[0].cells.map((c) => c.lvl), [0, 0, 0, 0, 0, 0, 0]);
-  assert.ok(rt[51].title.endsWith(tail));
+  assert.ok(rt[w].cells.filter((c) => c.state === "past").every((c) => c.lvl === 4)); // 累计末个有量列=全程 colMax
+  assert.ok(rt[0].cells.every((c) => c.lvl === 0));
+  assert.ok(rt[w].title.endsWith(tail));
+});
+
+test("hmRenderOf 聚合档：未到的那几周整列走虚线、不弹卡片，不与已过周混淆", { timeout: 5000 }, () => {
+  const cols = P.hmColumnsOf([]);
+  const rw = P.hmRenderOf(cols, "weekly");
+  const futureCols = rw.filter((r) => r.cells.every((c) => c.state === "future"));
+  assert.ok(futureCols.length > 0, "当年布局下 12 月之后必有整列未来周");
+  for (const r of futureCols) {
+    assert.equal(r.title, "", "未来周不弹卡片");
+    assert.ok(r.cells.every((c) => c.lvl === 0 && c.has === false));
+  }
+  // 已过的周必须仍是实心（state=past），不能被未来态污染
+  assert.ok(rw.some((r) => r.cells.some((c) => c.state === "past")));
 });
 
 test("hmRenderOf 累计档：轮数走累计口径，不与周轮数混口径（目检发现）", { timeout: 5000 }, () => {
-  // 两周各 3/5 轮：累计档第二列应报 8 轮（前一周 3 + 本周 5），周档仍只报本周 5 轮
+  // 两周各 3/5 轮：累计档后列应报 8 轮（前一周 3 + 本周 5），周档只报本周 5 轮
   const cols = P.hmColumnsOf([]);
-  const d1 = P.dateKey(cols[49][2].date); // 前推两周内的某天
-  const d2 = P.dateKey(cols[51][2].date); // 本周内的某天
+  const todayKey = P.dateKey(new Date());
+  const wToday = cols.findIndex((col) => col.some((c) => P.dateKey(c.date) === todayKey));
+  assert.ok(wToday >= 2, "今天所在列要有前两周可供对比");
+  const d1 = P.dateKey(cols[wToday - 2][2].date); // 两周前的某天（年内、已到）
+  const d2 = todayKey;                            // 本周就是今天
   const filled = P.hmColumnsOf([{ date: d1, tokens: 10, turns: 3 }, { date: d2, tokens: 20, turns: 5 }]);
-  // hmColumnsOf 内部按「今天」重算 52 列：直接复用同一批列做 render 才有稳定索引
   const rw = P.hmRenderOf(filled, "weekly");
   const rt = P.hmRenderOf(filled, "total");
-  assert.ok(rw[51].title.endsWith("20 tokens · 5 轮消息"), rw[51].title);
-  assert.ok(rt[51].title.endsWith("30 tokens · 8 轮消息"), rt[51].title);
-  assert.ok(rt[49].title.endsWith("10 tokens · 3 轮消息"), rt[49].title);
+  assert.ok(rw[wToday].title.endsWith("20 tokens · 5 轮消息"), rw[wToday].title);
+  assert.ok(rt[wToday].title.endsWith("30 tokens · 8 轮消息"), rt[wToday].title);
+  assert.ok(rt[wToday - 2].title.endsWith("10 tokens · 3 轮消息"), rt[wToday - 2].title);
 });
 
 test("hmLevel：零值/坏 max=0 档，其余 ceil(v/max*4) 钳 [1,4]", { timeout: 5000 }, () => {
@@ -983,15 +1046,39 @@ test("渲染冒烟：环图数据含 null 元素不炸（脏数据防护）", { 
   assert.ok(!all.includes("null"), "null 元素不应进入渲染结果");
 });
 
-test("渲染冒烟：末月标签右对齐——窄列不再被省略号截成「1..」", { timeout: 5000 }, () => {
+test("渲染冒烟：月份行 1 月到 12 月，末月标签右对齐", { timeout: 5000 }, () => {
   const tree = UI.HeatmapCard({ days: [], mode: "daily", onMode: () => {}, stale: false });
   const monthsRow = collect(tree).filter((n) => n.props?.className === "dus-hmMonths")[0];
   assert.ok(monthsRow, "应渲染月份行");
   const labels = collect(monthsRow).filter((n) => n.type === "span");
-  assert.ok(labels.length >= 12, "52 周应铺出完整月份序列，实际：" + labels.length);
+  assert.ok(labels.length >= 12, "当年布局应铺出 12 个月份标签，实际：" + labels.length);
+  const shown = labels.map((n) => texts(n).join(""));
+  assert.equal(shown[0], "1月", "最左必须是 1 月，实际：" + shown[0]);
+  assert.equal(shown[shown.length - 1], "12月", "最右必须是 12 月，实际：" + shown[shown.length - 1]);
   assert.equal(labels[labels.length - 1].props.className, "dus-hmMonthEnd", "末月标签应带右对齐类");
   assert.ok(labels.slice(0, -1).every((n) => n.props.className !== "dus-hmMonthEnd"), "只有末月右对齐");
   for (const n of labels) assert.match(String(n.props.style?.gridColumn), /^span \d+$/);
+});
+
+test("渲染冒烟：未到的日子走虚线占位、已过的日子实心填色，二者可区分", { timeout: 5000 }, () => {
+  const tree = UI.HeatmapCard({ days: [], mode: "daily", onMode: () => {}, stale: false });
+  const cells = collect(tree).filter((n) => n.type === "i" && typeof n.props?.["data-hm"] === "number");
+  assert.ok(cells.length >= 52 * 7, "格数应覆盖全年周列（含年外占位），实际：" + cells.length);
+  const future = cells.filter((n) => String(n.props.className).includes("dus-hmCellFuture"));
+  const past = cells.filter((n) => !String(n.props.className).includes("dus-hmCellFuture") && !String(n.props.className).includes("dus-hmCellOut"));
+  const out = cells.filter((n) => String(n.props.className).includes("dus-hmCellOut"));
+  assert.ok(future.length > 0, "12 月还没到，必须存在未来格");
+  assert.ok(past.length > 0, "1 月起的日子已过，必须存在实心格");
+  // 未来格不给内联背景色（虚线只勾轮廓），已过格必须给色阶——两者视觉才能分开
+  for (const n of future) assert.equal(n.props.style?.background, undefined, "未来格不应填色");
+  for (const n of past) assert.match(String(n.props.style?.background), /var\(--dus-hm\d\)/, "已过格应带色阶背景");
+  // 年外格只占位不画，也不能响应悬停
+  for (const n of out) {
+    assert.equal(n.props.style?.background, undefined);
+    assert.equal(n.props.onMouseEnter, undefined, "年外格不参与悬停");
+    assert.equal(n.props.title, undefined);
+  }
+  for (const n of future) assert.equal(n.props.onMouseEnter, undefined, "未来格不弹卡片");
 });
 
 test("渲染冒烟：模型用量右侧列表无悬停文本，环扇区仍保留悬停卡片", { timeout: 5000 }, () => {

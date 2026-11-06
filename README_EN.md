@@ -28,7 +28,7 @@ The loader row id and the client module id are **not** shared: the `id` in `cord
 |---|---|
 | Title row | "Usage Stats" + an "App Usage" pill badge |
 | Six-cell summary strip | Total Tokens / Peak Tokens / Cache Hit Rate / Longest Chat / Current Streak / Longest Streak; when the width is too narrow the **whole cell wraps** instead of truncating the label |
-| Token activity | Heatmap cells for 52 calendar weeks (starting Sunday); pills in the top-right switch between Daily / Weekly / Total |
+| Token activity | Heatmap cells covering January to December of the current year (52–54 calendar weeks, starting Sunday); pills in the top-right switch between Daily / Weekly / Total. Days that have not arrived yet are drawn as dashed outlines |
 | Time range | Pills switch between Last 7 Days / Last 30 Days, affecting **only the trend chart below** |
 | Daily token trend | Only the top 6 models by usage in the selected range get a coloured line, drawn with monotone cubic interpolation; the legend is display-only and matches the lines and tooltip rows |
 | Model usage | Donut chart on the left (total tokens in the centre) plus a per-model list on the right (name + share + token count); the list shows no hover text, and the hover card only appears on donut segments |
@@ -75,7 +75,7 @@ The blocks use different scopes — do not mix them up:
 | Data | Scope | Affected by "Last 7 Days / Last 30 Days" |
 | --- | --- | --- |
 | Six-cell summary strip | All time | No |
-| Token activity heatmap | Last 52 calendar weeks | No |
+| Token activity heatmap | January 1 to December 31 of the current year (52–54 calendar weeks) | No |
 | Daily token trend | Last 7 days / Last 30 days | Yes |
 | Model usage donut | All time | No |
 
@@ -220,7 +220,7 @@ See [docs/设计与验证.md](docs/设计与验证.md) for the design and verifi
 
 ## Known limitations
 
-- The heatmap always looks back 52 calendar weeks; older usage only counts towards the all-time figures such as the summary strip.
+- The heatmap spans the current calendar year from January to December, so only this year's usage is shown; days that have not arrived yet (for example December while it is still November) are drawn as dashed placeholders to distinguish them from the solid cells of elapsed months. Usage from earlier years only counts towards the all-time figures such as the summary strip.
 - Longest chat time is bucketed per (session, day) and takes the extreme, so cross-day chats are cut at day boundaries — an approximation.
 - The trend chart draws only the top 6 models by usage in the selected range (legend, lines and tooltip rows stay in sync); the tooltip notes "N more models not listed" — N counts the models with usage on **that day** that are not drawn — and its daily total still includes every model.
 - The cache hit rate only covers cache reads and uncached input, excluding output and reasoning.
