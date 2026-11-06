@@ -33,7 +33,7 @@ DeepSeek Harness 插件：侧边栏「使用统计」独立模块（与「插件
 ```
 lib/      fold.js（折叠状态机）store.js（落盘/锁）aggregate.js（日聚合）client.js（UI）index.js（host 接线）
 test/     纯函数直测 + 组件渲染冒烟 + 端到端
-docs/     设计与验证、审计记录、e2e-verify.mjs、smoke-ui.mjs、verify-dsh-web.mjs、images/
+docs/     design-and-verification.md（设计与验证）、audit-report.md（审核记录）、e2e-verify.mjs、smoke-ui.mjs、verify-dsh-web.mjs、images/
 icon.svg、cordis.patch.yml、package.json
 ```
 

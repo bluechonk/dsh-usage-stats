@@ -6,7 +6,7 @@ DeepSeek Harness 插件：在侧边栏新增「使用统计」独立模块（与
 
 侧边栏独立模块（排在「自动化任务」之后、「更多」之前）：
 
-![使用统计面板](docs/images/01-使用统计面板.png)
+![使用统计面板](docs/images/01-usage-stats-panel.png)
 
 ## 插件标识
 
@@ -36,15 +36,15 @@ loader 行 id 与 client 模块 id **不共用**：`cordis.patch.yml` 的 `id` �
 
 模型用量卡（环形图 + 模型列表 + 「其他模型」归并）：
 
-![模型用量环形图](docs/images/02-模型用量环形图.png)
+![模型用量环形图](docs/images/02-model-usage-donut.png)
 
 浅色主题（同一套布局，深浅两版都已核对）：
 
-![浅色主题](docs/images/03-浅色主题.png)
+![浅色主题](docs/images/03-light-theme.png)
 
 ## 设计基准
 
-界面按本机 **ZCode**「设置 → 使用统计」页的观感对齐（配色、卡片、热力格），布局则改为侧边栏独立面板。实测参数与逐项对照见 [docs/设计与验证.md](docs/设计与验证.md)：
+界面按本机 **ZCode**「设置 → 使用统计」页的观感对齐（配色、卡片、热力格），布局则改为侧边栏独立面板。实测参数与逐项对照见 [docs/design-and-verification.md](docs/design-and-verification.md)：
 
 | 要素 | 取值 |
 |---|---|
@@ -199,7 +199,7 @@ dsh-usage-stats/
 ├─ lib/store.js          # 落盘纪律、原子写、单写者锁
 ├─ lib/aggregate.js      # 聚合口径（streak / 峰值 / 命中率 / 占比）
 ├─ lib/client.js         # client 半：侧边栏导航行 + 主面板与全部图表
-├─ docs/                 # 设计与验证记录、审核报告、实机截图
+├─ docs/                 # design-and-verification.md（设计与验证）、audit-report.md（审核报告）、images/（实机截图）
 ├─ test/                 # node:test 纯函数与端到端单测
 └─ SPEC.md               # 技术规格全文
 ```
@@ -215,7 +215,7 @@ npm run verify:ui    # 真机 UI 冒烟：驱动真实浏览器打开侧边栏�
 
 零运行时依赖，测试用 Node 内置 `node:test`。`verify:e2e` 只读 `~/.dsh/sessions`，统计落盘到临时目录并在结束时自动清理，不污染 `~/.dsh/usage-stats/`。
 
-设计与验证细节见 [docs/设计与验证.md](docs/设计与验证.md)（含设计基准、审核与修复记录），接口契约全文见 [SPEC.md](SPEC.md)，版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+设计与验证细节见 [docs/design-and-verification.md](docs/design-and-verification.md)（含设计基准、审核与修复记录），接口契约全文见 [SPEC.md](SPEC.md)，版本变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 已知限制
 
