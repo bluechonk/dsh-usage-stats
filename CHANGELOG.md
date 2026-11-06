@@ -6,6 +6,19 @@
 
 **版本策略**：自用插件，走 `0.1.x` 迭代——接口与数据结构未稳定，不做兼容性承诺；`0.2.0` 留给不兼容的界面改版。不发布到 npm，只经 GitHub 链接安装。**每个发布版本只打一个 GitHub tag，不单独建 GitHub Release**（版本以 tag + 本文件为准）；**版本号只在发版时 bump**（改代码不动版本号），杜绝「有版本号没 tag」或「面板版本与 tag 对不上」的空档。
 
+## 未发布
+
+### 仓库
+
+- **仓库转为公开**：`bluechonk/dsh-usage-stats` 从私有改为 public；公开后免费额度即可用 GitHub 分支保护，不必退回「本地 `pre-push` 钩子拦截直推」的兜底方案。
+- **只允许 Squash 合并**：仓库设置关闭 merge commit 与 rebase merge，squash 提交标题取 PR 标题、正文取 PR 正文，合并后自动删分支。
+- **`main` 分支保护**：必须走 PR（直推被 `GH006: Protected branch update failed` 拒绝）、管理员同样受限、要求线性历史、禁 force push、禁删除分支、必须解决全部对话。审批数暂为 0——个人仓库无法给自己的 PR 批准，设 1 会把所有合并堵死。
+- **发版节奏**：取消「每合一个 PR 就 bump 版本号 + 打 tag」的做法。没有明确要求就不发版，未发版的改动在本段累积；发版时才定版号并打 tag。
+
+### 仓库整理
+
+- **脚本移出 `docs/`**：`e2e-verify.mjs`、`smoke-ui.mjs`、`verify-dsh-web.mjs` 三个可执行脚本迁到 `scripts/`，`docs/` 只留文档与图片；`npm run verify:e2e` / `verify:ui`、AGENTS、README 及脚本自述里的路径同步更新。
+
 ## 0.1.5
 
 ### 修复

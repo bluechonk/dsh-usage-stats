@@ -2,7 +2,7 @@
 // 只读本机会话日志，统计落盘到临时目录（不进 ~/.dsh/usage-stats），跑完自动清理。
 //
 // 用法：
-//   node docs/e2e-verify.mjs [仓库根目录] [会话目录]
+//   node scripts/e2e-verify.mjs [仓库根目录] [会话目录]
 //   仓库根目录默认取本文件的上级目录；会话目录默认取 $DSH_HOME/sessions。
 import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'

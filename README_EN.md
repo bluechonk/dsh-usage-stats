@@ -198,9 +198,9 @@ dsh-usage-stats/
 ├─ lib/fold.js           # folding state machine (replace / clear / sample, pure)
 ├─ lib/store.js          # write discipline, atomic writes, single-writer lock
 ├─ lib/aggregate.js      # aggregation semantics (streak / peak / hit rate / share)
-├─ lib/locale.js         # client copy dictionary (zh / en)
 ├─ lib/client.js         # client half: sidebar navigation row, main panel, and every chart
-├─ docs/                 # design and verification notes, audit report, screenshots
+├─ scripts/              # verify-dsh-web.mjs (dsh web verification instance), e2e-verify.mjs, smoke-ui.mjs
+├─ docs/                 # design-and-verification.md, audit-report.md, dsh-client-runtime-capabilities.md, images/
 ├─ test/                 # node:test unit and end-to-end tests
 └─ SPEC.md               # full technical specification
 ```
