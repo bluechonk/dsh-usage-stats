@@ -199,7 +199,8 @@ dsh-usage-stats/
 ├─ lib/store.js          # 落盘纪律、原子写、单写者锁
 ├─ lib/aggregate.js      # 聚合口径（streak / 峰值 / 命中率 / 占比）
 ├─ lib/client.js         # client 半：侧边栏导航行 + 主面板与全部图表
-├─ docs/                 # design-and-verification.md（设计与验证）、audit-report.md（审核报告）、images/（实机截图）
+├─ scripts/              # verify-dsh-web.mjs（dsh web 验证实例）、e2e-verify.mjs、smoke-ui.mjs
+├─ docs/                 # design-and-verification.md（设计与验证）、audit-report.md（审核报告）、dsh-client-runtime-capabilities.md（宿主能力调研）、images/（实机截图）
 ├─ test/                 # node:test 纯函数与端到端单测
 └─ SPEC.md               # 技术规格全文
 ```
@@ -208,7 +209,7 @@ dsh-usage-stats/
 
 ```bash
 npm run check        # 语法检查
-npm test             # 单元测试（148 项）
+npm test             # 单元测试（167 项）
 npm run verify:e2e   # 端到端：用本机会话日志跑一遍回填，校验四条 API 的响应形状
 npm run verify:ui    # 真机 UI 冒烟：驱动真实浏览器打开侧边栏「使用统计」，断言面板完整渲染且无控制台错误
 ```

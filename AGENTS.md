@@ -26,37 +26,42 @@ DeepSeek Harness 插件：侧边栏「使用统计」独立模块（与「插件
 | `npm test` | 单元与契约测试（`node --test`，覆盖 `__pure` 直测面与组件渲染） |
 | `npm run verify:e2e` | 真实会话回填 → 四条 API 响应形状 |
 | `npm run verify:ui` | 真机 UI 冒烟（需要 dsh web 地址） |
-| `node docs/verify-dsh-web.mjs boot\|open\|snapshot\|click\|find\|screenshot\|stop` | dsh web + agent-browser 真机验证 |
+| `node scripts/verify-dsh-web.mjs boot\|open\|snapshot\|click\|find\|screenshot\|stop` | dsh web + agent-browser 真机验证 |
 
 ## 目录结构
 
 ```
 lib/      fold.js（折叠状态机）store.js（落盘/锁）aggregate.js（日聚合）client.js（UI）index.js（host 接线）
 test/     纯函数直测 + 组件渲染冒烟 + 端到端
-docs/     design-and-verification.md（设计与验证）、audit-report.md（审核记录）、e2e-verify.mjs、smoke-ui.mjs、verify-dsh-web.mjs、images/
+scripts/  e2e-verify.mjs（回填与 API 形状验证）smoke-ui.mjs（真机 UI 冒烟）verify-dsh-web.mjs（dsh web 验证实例）
+docs/     design-and-verification.md（设计与验证）、audit-report.md（审核记录）、dsh-client-runtime-capabilities.md（宿主能力调研）、images/（截图）
 icon.svg、cordis.patch.yml、package.json
 ```
+
+约定：**可执行脚本一律放 `scripts/`，`docs/` 只放文档与图片**；临时脚本放 `.tmp/`（不入库）。
 
 ## 版本与发版
 
 - 版本策略：`0.1.x` 自用迭代，不做兼容性承诺；`0.2.0` 留给不兼容的界面改版。
 - 不发布到 npm，只经 GitHub 链接安装。
-- **版本号只在发版时 bump**，`0.1.x` 连续递增不跳号（改代码不动版本号）。
-- **发版 = 打 tag，不建 GitHub Release**；tag 打在合并后的 `main` 上，与 CHANGELOG 段落一一对应。
-- 发版流程：改代码 → `npm run check` + `npm test` 全绿 → bump 版本号并写 CHANGELOG → 分支 + PR → 合并 → 打 tag（`git tag -a vX.Y.Z`）。
+- **没有明确要求就不发版**：日常改代码既不 bump 版本号、也不打 tag——**不要每合一个 PR 就打一个 tag**。
+  未发版的改动在 `CHANGELOG.md` 顶部「未发布」段里累积。
+- 发版只在用户明确说「发版 / 打 tag / 出个版本」时做：`npm run check` + `npm test` 全绿 → 把「未发布」段
+  定版为 `0.1.x` 并 bump 版本号 → 分支 + PR → 合并 → 在合并后的 `main` 上打 tag（`git tag -a vX.Y.Z`）。
+- `0.1.x` 连续递增不跳号；**发版 = 打 tag，不建 GitHub Release**（本仓库惯例）。
 
 ## 真机验证（唯一路径：dsh web + agent-browser）
 
 desktop 是 Electron 且没有调试端口，agent-browser 连不上；**dsh web 与 desktop 加载同一套 Web UI、读同一份数据**，验证结论一致。测试实例的插件组合与 desktop 相同（临时 profile 复制 desktop 清单 + `node_modules` 目录联接）。
 
 ```bash
-node docs/verify-dsh-web.mjs boot                          # 起测试实例（约 10s），打印掩码地址
-node docs/verify-dsh-web.mjs open                          # agent-browser 打开
-node docs/verify-dsh-web.mjs snapshot                      # 无障碍树，拿 @ref
-node docs/verify-dsh-web.mjs click '@e11'                  # 点击（ref 来自 snapshot）
-node docs/verify-dsh-web.mjs find role button click --name 使用统计   # 语义定位，不依赖 ref
-node docs/verify-dsh-web.mjs screenshot /abs/path/x.png    # 截图（绝对路径）
-node docs/verify-dsh-web.mjs stop                          # 停实例 + 删临时 profile
+node scripts/verify-dsh-web.mjs boot                          # 起测试实例（约 10s），打印掩码地址
+node scripts/verify-dsh-web.mjs open                          # agent-browser 打开
+node scripts/verify-dsh-web.mjs snapshot                      # 无障碍树，拿 @ref
+node scripts/verify-dsh-web.mjs click '@e11'                  # 点击（ref 来自 snapshot）
+node scripts/verify-dsh-web.mjs find role button click --name 使用统计   # 语义定位，不依赖 ref
+node scripts/verify-dsh-web.mjs screenshot /abs/path/x.png    # 截图（绝对路径）
+node scripts/verify-dsh-web.mjs stop                          # 停实例 + 删临时 profile
 ```
 
 注意：
@@ -69,7 +74,7 @@ node docs/verify-dsh-web.mjs stop                          # 停实例 + 删临�
 ## 代码与提交约定
 
 - 注释与文档用中文、无 emoji、LF（`.gitattributes` 已配 `* text=auto eol=lf`）。
-- 临时脚本与中间产物放 `.tmp/`（已忽略）；可复用流程沉淀到 `docs/`。
+- 临时脚本与中间产物放 `.tmp/`（已忽略）；可复用流程沉淀到 `docs/`，可执行脚本放 `scripts/`。
 
 ### 提交信息
 
@@ -95,6 +100,16 @@ node docs/verify-dsh-web.mjs stop                          # 停实例 + 删临�
 4. **再推远程、开 PR**，PR 用 Squash 合并（PR 标题走 Conventional Commits）。
 
 注意：不要改写**已经推送**的历史（那需要 force-push，也会让 tag 与提交脱节）；需要调整就新开分支。
+
+### 仓库设置（已在 GitHub 上生效）
+
+- 仓库**公开**（`bluechonk/dsh-usage-stats`）；公开后免费额度即可用分支保护，无需退回 `pre-push` 钩子方案。
+- 合并方式：**只允许 Squash**（`allow_merge_commit` / `allow_rebase_merge` 均关闭），合并后自动删分支，
+  squash 提交标题取 PR 标题、正文取 PR 正文。
+- `main` 分支保护：**必须走 PR**（直推被 `GH006` 拒绝）、**管理员同样受限**、要求线性历史（禁 merge commit）、
+  禁 force push、禁删除分支、必须解决全部对话。
+- 审批数暂为 0：个人仓库无法给自己的 PR 批准，设 1 会把所有合并堵死；有多账号协作需求时再改。
+- 改这些设置的命令见提交历史（`gh api -X PATCH repos/…` 与 `branches/main/protection`）。
 
 ## 禁止
 

@@ -6,7 +6,7 @@
 // 本脚本用 CDP 驱动真实浏览器，是唯一能覆盖真实渲染路径的验证手段。
 //
 // 用法：
-//   node docs/smoke-ui.mjs <DSH实例URL（含token）> [Chrome路径] [输出目录]
+//   node scripts/smoke-ui.mjs <DSH实例URL（含token）> [Chrome路径] [输出目录]
 //   Chrome 路径默认取 agent-browser 自带的 Chromium；输出目录默认 .tmp/
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -14,7 +14,7 @@ import { join } from 'node:path'
 
 const url = process.argv[2]
 if (!url) {
-  console.error('用法：node docs/smoke-ui.mjs <DSH实例URL> [Chrome路径] [输出目录]')
+  console.error('用法：node scripts/smoke-ui.mjs <DSH实例URL> [Chrome路径] [输出目录]')
   process.exit(2)
 }
 const chrome = process.argv[3] ?? 'C:/Users/bluechonk/.agent-browser/browsers/chrome-155.0.8059.84/chrome.exe'

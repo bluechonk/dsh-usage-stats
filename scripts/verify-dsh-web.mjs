@@ -5,13 +5,13 @@
 // dsh web 与 desktop 加载同一套 Web UI、读同一份数据，验证结论一致。
 //
 // 怎么用（详见 AGENTS.md「真机验证」）：
-//   node docs/verify-dsh-web.mjs boot                  # 起测试实例（约 10s）
-//   node docs/verify-dsh-web.mjs open                  # agent-browser 打开实例
-//   node docs/verify-dsh-web.mjs snapshot              # 无障碍树，拿 @ref
-//   node docs/verify-dsh-web.mjs click @e12            # 点击（ref 见 snapshot）
-//   node docs/verify-dsh-web.mjs find role button click --name 使用统计   # 语义定位，不依赖 ref
-//   node docs/verify-dsh-web.mjs screenshot <绝对路径>  # 截图
-//   node docs/verify-dsh-web.mjs stop                  # 停实例 + 清理临时 profile
+//   node scripts/verify-dsh-web.mjs boot                  # 起测试实例（约 10s）
+//   node scripts/verify-dsh-web.mjs open                  # agent-browser 打开实例
+//   node scripts/verify-dsh-web.mjs snapshot              # 无障碍树，拿 @ref
+//   node scripts/verify-dsh-web.mjs click @e12            # 点击（ref 见 snapshot）
+//   node scripts/verify-dsh-web.mjs find role button click --name 使用统计   # 语义定位，不依赖 ref
+//   node scripts/verify-dsh-web.mjs screenshot <绝对路径>  # 截图
+//   node scripts/verify-dsh-web.mjs stop                  # 停实例 + 清理临时 profile
 //
 // 环境变量：DSH_CLI（dsh.cmd 路径）、DSH_DESKTOP_PROFILE（源 profile）、
 //          VERIFY_PORT（默认 44000）、AGENT_BROWSER_SESSION（默认 dsh-verify）。
@@ -158,7 +158,7 @@ try {
     if (r.out !== '') console.log(r.out)
     if (r.code !== 0) { console.error('agent-browser ' + cmd + ' 失败（exit ' + r.code + '）'); process.exitCode = 1 }
   } else {
-    console.error('用法：node docs/verify-dsh-web.mjs <boot|stop|url|open|snapshot|click|screenshot|eval> [参数]')
+    console.error('用法：node scripts/verify-dsh-web.mjs <boot|stop|url|open|snapshot|click|screenshot|eval> [参数]')
     process.exitCode = 2
   }
 } catch (error) {
