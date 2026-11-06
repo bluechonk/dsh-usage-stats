@@ -47,7 +47,7 @@ const PURE_KEYS = [
   "trendScaleOf", "trendYNorm",
   "donutRowsOf", "donutArcPath", "validOf",
   // v0.2.0 增量（SPEC §6）
-  "phaseAfterTick", "summaryCellsOf", "tipPlacementOf", "tipRowsOf", "hiddenModelCountOf",
+  "phaseAfterTick", "summaryCellsOf", "tipPlacementOf", "tipRowsOf", "hiddenModelRowsOf",
   "pctTextOf", "donutTipTextOf", "needHeatmapRefreshOf", "cursorStepOf", "backfillUiOf",
 ];
 test("__pure 导出面快照（36 个纯函数、冻结）", { timeout: 5000 }, () => {
@@ -679,15 +679,36 @@ test("tipPlacementOf：锚点右侧优先、右侧放不下翻到左侧、两轴
   }
 });
 
-test("hiddenModelCountOf：按悬停日统计未画出的有量模型（不是区间级）", { timeout: 5000 }, () => {
+test("hiddenModelRowsOf：按悬停日列出未画线的有量模型明细（不是区间级、也不只给个数）", { timeout: 5000 }, () => {
   const shown = ["p/a", "p/b", "p/c", "p/d", "p/f", "p/g"].map((key) => ({ key }));
-  const day = { byModel: { "p/a": 10, "p/b": 0, "p/c": 5, "p/d": -3, "p/e": 7 } };
-  assert.equal(P.hiddenModelCountOf(day, shown), 1, "只有 p/e 在当日有量且未画出");
-  // 同一个 day 换成「只画 1 个模型」：p/c 与 p/e 都算隐藏，0/负值不算
-  assert.equal(P.hiddenModelCountOf(day, [{ key: "p/a" }]), 2);
-  // 没有隐藏模型的普通一天不应出现「另有 N 个」
-  assert.equal(P.hiddenModelCountOf({ byModel: { "p/a": 10, "p/b": 5 } }, shown), 0);
-  assert.equal(P.hiddenModelCountOf(null, shown), 0);
+  const day = { byModel: { "p/a": 10, "p/b": 0, "p/c": 5, "p/d": -3, "p/e": 70000, "p/h": 1000 } };
+  // 只有 p/e 与 p/h 在当日有量且未画出：必须出行，值走万/亿简写，没画线的行标 off
+  const out = P.hiddenModelRowsOf(day, shown, 3);
+  assert.deepEqual(out.rows.map((r) => r.key), ["p/e", "p/h"], "按当天用量降序列出未画线的模型");
+  assert.deepEqual(out.rows.map((r) => r.value), ["7万", "1000"]);
+  assert.ok(out.rows.every((r) => r.off === true && r.color === ""), "未画线的行必须是空心标记");
+  assert.equal(out.restCount, 0);
+  // 上限之外折成计数：只画前 6 条时，p/c、p/e、p/h 都未画线，列前 2 条、其余计入 restCount
+  const capped = P.hiddenModelRowsOf(day, [{ key: "p/a" }], 2);
+  assert.deepEqual(capped.rows.map((r) => r.key), ["p/e", "p/h"]);
+  assert.equal(capped.restCount, 1);
+  // 一张线都不画时，四个有量模型全算未画线：只列最大的一条，其余 3 条折成计数
+  const more = P.hiddenModelRowsOf(day, [], 1);
+  assert.deepEqual(more.rows.map((r) => r.key), ["p/e"]);
+  assert.equal(more.restCount, 3);
+  // 没有未画线模型的一天：空明细，卡片里不该出现「另有 N 个」
+  assert.deepEqual(P.hiddenModelRowsOf({ byModel: { "p/a": 10, "p/b": 5 } }, shown, 3), { rows: [], restCount: 0 });
+  assert.deepEqual(P.hiddenModelRowsOf(null, shown, 3), { rows: [], restCount: 0 });
+});
+
+test("hiddenModelRowsOf：某天用量全来自未画线的模型时仍出明细（空卡回归）", { timeout: 5000 }, () => {
+  const shown = ["p/a", "p/b", "p/c", "p/d", "p/f", "p/g"].map((key) => ({ key }));
+  const day = { total: 397000, byModel: { "p/a": 0, "p/b": 0, "p/z1": 281000, "p/z2": 116000 } };
+  const out = P.hiddenModelRowsOf(day, shown, 3);
+  assert.equal(out.rows.length, 2, "图上一条线都没有时，卡片必须把当天真正用量的模型列出来");
+  assert.deepEqual(out.rows.map((r) => r.key), ["p/z1", "p/z2"]);
+  assert.equal(P.tipRowsOf(day, shown).length, 0, "前提：这 6 条线当天确实都是 0");
+  assert.ok(out.rows.reduce((a, r) => a + (r.value === "28.1万" ? 281000 : 116000), 0) === 397000, "明细之和应能对上标题里的日总量");
 });
 
 test("tipRowsOf：0/负/缺值模型行不进卡片；值走万/亿简写；非数组输入空表", { timeout: 5000 }, () => {
