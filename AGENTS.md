@@ -83,7 +83,8 @@ node docs/verify-dsh-web.mjs stop                          # 停实例 + 删临�
 
 - 分支名 `type/kebab-desc`（如 `fix/ui-narrow-context`、`feat/context-message-split`）。
 - **PR 标题 = 该 PR 要落地的提交标题**；一个 PR 一个语义变更。
-- **PR 用 rebase 合并，禁止 merge commit**（保持 `main` 线性历史）。
+- **PR 用 Squash 合并，禁止 merge commit 与 rebase merge**（保持 `main` 线性历史；遵循全局规则）。
+  squash 后 `main` 上那条提交的标题与正文就是 PR 标题与正文——先按提交信息规范写好 PR。
 - 小改动先在本地 `commit` 攒着，攒够一批再走 PR。
 
 ### 提交工作流（小步提交 + 合并前整理）
@@ -91,7 +92,7 @@ node docs/verify-dsh-web.mjs stop                          # 停实例 + 删临�
 1. **分支上小步提交**：开发时随手 `git commit`，允许 `wip: 尝试 xxx`、`tmp:` 这类中间提交，不追求一步到位。
 2. **合并前整理**：功能稳定后 `git rebase -i <base>`——压缩 wip、重排顺序、合并同主题提交，整理成语义清晰的提交。
 3. **推送前复查**：`git log --oneline <base>..HEAD` 逐个过一遍，确认每个提交都符合上面的提交信息规范，且 `npm run check` 通过（能跑 `npm test` 就跑）。
-4. **再推远程、开 PR**，PR 用 rebase 合并。
+4. **再推远程、开 PR**，PR 用 Squash 合并（PR 标题走 Conventional Commits）。
 
 注意：不要改写**已经推送**的历史（那需要 force-push，也会让 tag 与提交脱节）；需要调整就新开分支。
 
